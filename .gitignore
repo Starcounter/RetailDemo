@@ -1,28 +1,29 @@
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+_Resharper*
+obj
+bin
+docs
+x64
+Win32
+Debug
+Release
+*.user
+*.cache
+*.opensdf
+*.generated.cs
+*.Resources.Designer.cs.dll
+*.force
+*.suo
+*.sdf
+*.ipch
+*.aps
+*.csproj.user
+src/Starcounter/Error.cs
+src/Starcounter.Internal/Error.cs
+src/_NCrunch_Level1
+src/packages
+.nuget
 
-# Precompiled Headers
-*.gch
-*.pch
+*.output
 
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
+#nCover
+*.sln.DotSettings
