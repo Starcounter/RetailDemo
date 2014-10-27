@@ -1,0 +1,4 @@
+RetailDemo
+==========
+
+Retail demo projects
