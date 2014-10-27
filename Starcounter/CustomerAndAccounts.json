@@ -1,0 +1,7 @@
+{
+  "CustomerId": 0,
+  "FullName": "",
+  "Accounts": [
+    { "AccountId": 0, "Balance": 0 }
+  ]
+}
