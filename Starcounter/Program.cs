@@ -12,6 +12,7 @@ namespace ScRetailDemo {
 
                 CreateIndexes();
 
+                // https://github.com/Starcounter/Starcounter/issues/1602
                 Json.DirtyCheckEnabled = false;
 
                 Db.Transaction(() => {
@@ -23,7 +24,7 @@ namespace ScRetailDemo {
             });
 
             Handle.GET("/serverAggregates", () => {
-				return "AccountBalanceTotal=" + Db.SlowSQL<Int64>("SELECT SUM (a.Balance) FROM Account a").First;
+                return "AccountBalanceTotal=" + Db.SlowSQL<Int64>("SELECT SUM (a.Balance) FROM Account a").First;
             });
 
             Handle.GET("/customers/{?}", (int customerId) => {
@@ -44,7 +45,7 @@ namespace ScRetailDemo {
                 return new Response() { BodyBytes = json.ToJsonUtf8() };
             });
 
-            Handle.PUT("/customers/{?}", (int customerId, CustomerAndAccounts json) => {
+            Handle.POST("/customers/{?}", (int customerId, CustomerAndAccounts json) => {
                 Db.Transaction(() => {
                     var customer = new Customer { CustomerId = (int) json.CustomerId, FullName = json.FullName };
                     foreach (var a in json.Accounts) {
@@ -57,7 +58,7 @@ namespace ScRetailDemo {
                 });
                 return 201;
             });
-            
+
             Handle.POST("/transfer?f={?}&t={?}&x={?}", (int fromId, int toId, int amount) => {
                 Db.Transaction(() => {
                     Account source = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", fromId).First;
