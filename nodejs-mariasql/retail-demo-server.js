@@ -1,19 +1,8 @@
 // https://www.npmjs.org/package/mariasql
 
-var server = require('node-router').getServer();
 var inspect = require('util').inspect;
+var server = require('node-router').getServer();
 var Client = require('mariasql');
-
-// Configure our HTTP server to respond with Hello World the root request
-server.get("/", function (request, response) {
-  response.simpleText(200, "Hello World!");
-});
-
-// Listen on port 8080 on localhost
-server.listen(8000, "localhost");
-
-
-
 
 var c = new Client();
 c.connect({
@@ -32,21 +21,33 @@ c.on('connect', function() {
    console.log('Client closed');
  });
 
-c.query('SHOW DATABASES')
- .on('result', function(res) {
-   res.on('row', function(row) {
-     console.log('Result row: ' + inspect(row));
-   })
-   .on('error', function(err) {
-     console.log('Result error: ' + inspect(err));
-   })
-   .on('end', function(info) {
-     console.log('Result finished successfully');
-   });
- })
- .on('end', function() {
-   console.log('Done with all results');
- });
+
+server.get("/", function (request, response) {
+  response.simpleText(200, "Hello World!");
+});
+
+server.get("/showdb", function (request, response) {
+  var text = "<html><table>\n";
+  c.query('SHOW DATABASES')
+    .on('result', function(res) {
+      res.on('row', function(row) {
+	text += '<tr>' + inspect(row) + '</tr>';
+      })
+      .on('error', function(err) {
+	text += '<hr><strong>' + inspect(err) + '</strong><hr>';
+      })
+      .on('end', function(info) {
+	text += '</table>';
+      });
+    })
+    .on('end', function() {
+	text += '</html>\n';
+    });
+  });
+  response.simpleHtml(200, text);
+});
+
+server.listen(8000, "localhost");
 
 c.end();
 
