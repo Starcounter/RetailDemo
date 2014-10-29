@@ -6,7 +6,39 @@ namespace ScRetailDemo {
 
     class ScRetailDemo {
 
+        // Statistics locker.
+        const String statsLocker_ = "Locker";
+
+        // Holds statistics from each client.
+        static Dictionary<String, String> clientsStats_ = new Dictionary<String, String>();
+
         static void Main() {
+
+            // Handler that adds statistics.
+            Handle.POST("/addstats/{?}/{?}", (String ip, String numResponses) => {
+
+                lock(statsLocker_) {
+
+                    clientsStats_.Add(ip, numResponses);
+                }
+
+                return 200;
+            });
+
+            // Getting client statistics.
+            Handle.GET("/stats", () => {
+
+                String s = "Clients reported the following statistics:\r\n";
+
+                lock (statsLocker_) {
+
+                    foreach (KeyValuePair<String, String> k in clientsStats_) {
+                        s += k.Key + " => " + k.Value + "\r\n";
+                    }
+                }
+
+                return s;
+            });
 
             Handle.GET("/init", () => {
 
@@ -74,6 +106,7 @@ namespace ScRetailDemo {
         }
 
         private static void CreateIndexes() {
+
             if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountIdIndex").First == null)
                 Db.SQL("CREATE UNIQUE INDEX AccountIdIndex ON Account (AccountId asc)");
 
