@@ -55,6 +55,7 @@ app.get('/init', function (req, res) {
             [
                 "CREATE TABLE IF NOT EXISTS Customer (CustomerId INT PRIMARY KEY, FullName VARCHAR(32) NOT NULL, INDEX FullNameIndex (FullName))",
                 "CREATE TABLE IF NOT EXISTS Account (AccountId INT PRIMARY KEY, AccountType INT DEFAULT 0, Balance INT DEFAULT 0, CustomerId INT NOT NULL, FOREIGN KEY (CustomerId) REFERENCES Customer(CustomerId) ON DELETE CASCADE)",
+                "CREATE TABLE IF NOT EXISTS ClientStats (Received TIMESTAMP, ClientIp VARCHAR(32), NumFails INT, NumOk INT)",
                 "DELETE FROM Account",
                 "DELETE FROM Customer",
                 "DROP PROCEDURE IF EXISTS AccountBalanceTransfer",
@@ -80,11 +81,58 @@ app.get('/init', function (req, res) {
     process_query_list(res, res.query_list.shift());
 });
 
+// /addstats?numfail=X&numok=Y
+app.get("/addstats", function (req, res) {
+    c.query("INSERT INTO ClientStats VALUES (NOW(), ?, ?, ?)", [req.ip, req.query.numfail, req.query.numok], true)
+    .on('error', function(err) {
+        res.status(500).send(err.message);
+    })
+    .on('result', function(dbres) {
+        dbres
+        .on('end', function(info) {
+            res.sendStatus(204);
+        })
+    })
+});
+
 /*
-    Handle.GET("/serverAggregates", () => {
-        return "AccountBalanceTotal=" + Db.SlowSQL<Int64>("SELECT SUM (a.Balance) FROM Account a").First;
-    });
+// Getting client statistics.
+Handle.GET("/stats", () => {
+
+    List<String> list = new List<String>();
+
+    lock (statsLocker_) {
+
+        // Printing information about each client.
+        foreach (KeyValuePair<String, ClientStats> k in clientsStats_) {
+
+            String s = String.Format("\"ClientIp\":\"{0}\",\"TotalResponses\":\"{1}\",\"ApproximateRps\":\"{2}\"",
+                k.Key, k.Value.NumResponses, k.Value.RPS);
+
+            list.Add("{" + s + "}");
+        }
+    }
+
+    return "{\"ClientInfos\":[" + String.Join(",", list.ToArray()) + "]}";
+});
 */
+app.get("/stats", function (req, res) {
+    res.ClientInfos = [];
+    c.query("SELECT * FROM ClientStats")
+    .on('error', function(err) {
+        res.status(500).send(err.message);
+    })
+    .on('result', function(dbres) {
+        dbres
+        .on('row', function(row) {
+            res.ClientInfos.push(row);
+        })
+        .on('end', function(info) {
+            res.json(res.ClientInfos);
+        })
+    })
+});
+
 app.get("/serverAggregates", function (req, res) {
     c.query("SELECT SUM(Balance) AS Total FROM Account")
     .on('error', function(err) {
@@ -98,21 +146,6 @@ app.get("/serverAggregates", function (req, res) {
 });
 
 
-/*
-Handle.PUT("/customers/{?}", (int customerId, CustomerAndAccounts json) => {
-    Db.Transaction(() => {
-        var customer = new Customer { CustomerId = (int) json.CustomerId, FullName = json.FullName };
-        foreach (var a in json.Accounts) {
-            new Account {
-                AccountId = (int) a.AccountId,
-                Balance = (int) a.Balance,
-                Customer = customer
-            };
-        }
-    });
-    return 201;
-});
-*/
 app.post("/customers/:id", function (req, res) {
     c.query("INSERT INTO Customer VALUES (?, ?)", [req.params.id, req.body.FullName])
     .on('error', function(err) {
@@ -143,13 +176,6 @@ app.post("/customers/:id", function (req, res) {
     })
 });
 
-/*
-Handle.GET("/customers/{?}", (int customerId) => {
-    var json = new CustomerJson();
-    json.Data = Db.SQL("SELECT p FROM Customer p WHERE CustomerId = ?", customerId).First;
-    return new Response() { BodyBytes = json.ToJsonUtf8() };
-});
-*/
 app.get("/customers/:id", function (req, res) {
     c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
     .on('error', function(err) {
@@ -166,13 +192,6 @@ app.get("/customers/:id", function (req, res) {
     })
 });
 
-/*
-Handle.GET("/dashboard/{?}", (int customerId) => {
-    var json = new CustomerAndAccounts();
-    json.Data = Db.SQL("SELECT p FROM Customer p WHERE CustomerId = ?", customerId).First;
-    return new Response() { BodyBytes = json.ToJsonUtf8() };
-});
-*/
 app.get("/dashboard/:id", function (req, res) {
     c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
     .on('error', function(err) {
@@ -198,13 +217,6 @@ app.get("/dashboard/:id", function (req, res) {
     })
 });
 
-/*
-Handle.GET("/customers?f={?}", (string fullName) => {
-    var json = new CustomerJson();
-    json.Data = Db.SQL("SELECT p FROM Customer p WHERE FullName = ?", fullName).First;
-    return new Response() { BodyBytes = json.ToJsonUtf8() };
-});
-*/
 app.get("/customers", function (req, res) {
     c.query("SELECT * FROM Customer WHERE FullName = ?", [req.query.f])
     .on('error', function(err) {
@@ -222,21 +234,6 @@ app.get("/customers", function (req, res) {
     })
 });
 
-
-/*
-Handle.POST("/transfer?f={?}&t={?}&x={?}", (int fromId, int toId, int amount) => {
-    Db.Transaction(() => {
-        Account source = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", fromId).First;
-        Account target = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", toId).First;
-        source.Balance -= amount;
-        target.Balance += amount;
-        //if (source.Balance < 0 || target.Balance < 0 ) {
-        //    throw new Exception("You cannot move money that is not in the account");
-        //}
-    });
-    return 200;
-});
-*/
 app.get("/transfer", function (req, res) {
     c.query("CALL AccountBalanceTransfer(?, ?, ?)", [req.query.f, req.query.t, req.query.x], true)
     .on('error', function(err) {
@@ -251,40 +248,6 @@ app.get("/transfer", function (req, res) {
     .on('end', function(info) {
         res.sendStatus(204);
     })
-});
-
-app.get("/check", function (req, res) {
-    var body = '<html><body>';
-    var rowcount = 0;
-    c.query('SHOW DATABASES')
-    .on('result', function(dbres) {
-        body += '<table>';
-        dbres.on('row', function(row) {
-            if (!rowcount) {
-                body += '<tr>';
-                for (col in row) {
-                    body += '<td><tt><u>' + col + '</u></tt></td>';
-                }
-                body += '</tr>';
-            }
-            rowcount++;
-            body += '<tr>';
-            for (col in row) {
-                body += '<td><tt>' + row[col] + '</tt></td>';
-            }
-            body += '</tr>';
-        })
-        .on('error', function(err) {
-            res.send('<strong><tt>' + err + '</tt></strong>');
-        })
-        .on('end', function(info) {
-            body += '</table>';
-        });
-    })
-    .on('end', function() {
-        body += '</body></html>';
-        res.send(body);
-    });
 });
 
 app.get('/quit', function (req, res) {
