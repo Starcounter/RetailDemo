@@ -1,0 +1,8 @@
+{
+  "AllClientStats": [ {
+      "Received": "2007-05-12 12:30:21",
+      "ClientIp": "123.123.123.123",
+      "NumFail": "123123",
+      "NumOk" : "43534"
+  } ]
+}

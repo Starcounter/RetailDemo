@@ -6,67 +6,35 @@ namespace ScRetailDemo {
 
     class ScRetailDemo {
 
-        // Statistics locker.
-        const String statsLocker_ = "Locker";
-
-        class ClientStats {
-            public String ClientIp;
-            public String NumResponses;
-            public String RPS;
-        }
-
-        // Holds statistics from each client.
-        static Dictionary<String, ClientStats> clientsStats_ = new Dictionary<String, ClientStats>();
-
         static void Main() {
 
-            // Handler that adds statistics.
-            Handle.POST("/addstats/{?}/{?}/{?}", (String ip, String numResponses, String rps) => {
+            // Handler that adds statistics from client.
+            Handle.GET("/addstats?numFail={?}&numOk={?}", (Request req, String numFail, String numOk) => {
 
-                lock(statsLocker_) {
+                Db.Transaction(() => {
 
-                    ClientStats cs = null;
-                    clientsStats_.TryGetValue(ip, out cs);
+                    ClientStatsEntry cs = new ClientStatsEntry() {
+                        Received = DateTime.Now.ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fff'Z'"),
+                        ClientIp = req.ClientIpAddress.ToString(),
+                        NumFail = numFail,
+                        NumOk = numOk
+                    };
 
-                    // Checking if this client already has statistics.
-                    if (cs == null) {
+                });
 
-                        clientsStats_[ip] = new ClientStats() {
-                            ClientIp = ip,
-                            NumResponses = numResponses,
-                            RPS = rps
-                        };
-
-                    } else {
-
-                        cs.NumResponses = numResponses;
-                        cs.RPS = rps;
-                    }
-                }
-
-                return 200;
+                return 204;
             });
 
-            // Getting client statistics.
+            // Getting all clients statistics.
             Handle.GET("/stats", () => {
 
-                List<String> list = new List<String>();
+                var json = new ClientStatsJson();
+                json.AllClientStats = Db.SQL("SELECT s FROM ClientStatsEntry s");
 
-                lock (statsLocker_) {
-
-                    // Printing information about each client.
-                    foreach (KeyValuePair<String, ClientStats> k in clientsStats_) {
-
-                        String s = String.Format("\"ClientIp\":\"{0}\",\"TotalResponses\":\"{1}\",\"ApproximateRps\":\"{2}\"",
-                            k.Key, k.Value.NumResponses, k.Value.RPS);
-
-                        list.Add("{" + s + "}");
-                    }
-                }
-
-                return "{\"ClientInfos\":[" + String.Join(",", list.ToArray()) + "]}";
+                return new Response() { BodyBytes = json.ToJsonUtf8() };
             });
 
+            // Initializes the database state.
             Handle.GET("/init", () => {
 
                 // Creating all needed indexes.
@@ -78,6 +46,7 @@ namespace ScRetailDemo {
                 Db.Transaction(() => {
                     Db.SlowSQL("DELETE FROM Account");
                     Db.SlowSQL("DELETE FROM Customer");
+                    Db.SlowSQL("DELETE FROM ClientStatsEntry");
                 });
 
                 return 200;
@@ -94,7 +63,7 @@ namespace ScRetailDemo {
             });
 
             Handle.GET("/dashboard/{?}", (int customerId) => {
-                var json = new CustomerAndAccounts();
+                var json = new CustomerAndAccountsJson();
                 json.Data = Db.SQL("SELECT p FROM Customer p WHERE CustomerId = ?", customerId).First;
                 return new Response() { BodyBytes = json.ToJsonUtf8() };
             });
@@ -105,7 +74,7 @@ namespace ScRetailDemo {
                 return new Response() { BodyBytes = json.ToJsonUtf8() };
             });
 
-            Handle.POST("/customers/{?}", (int customerId, CustomerAndAccounts json) => {
+            Handle.POST("/customers/{?}", (int customerId, CustomerAndAccountsJson json) => {
                 Db.Transaction(() => {
                     var customer = new Customer { CustomerId = (int) json.CustomerId, FullName = json.FullName };
                     foreach (var a in json.Accounts) {
@@ -147,6 +116,14 @@ namespace ScRetailDemo {
             if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "CustomerIndex").First == null)
                 Db.SQL("CREATE INDEX CustomerIndex ON Account (Customer, AccountId asc)");
         }
+    }
+
+    [Database]
+    public class ClientStatsEntry {
+        public String Received;
+        public String ClientIp;
+        public String NumFail;
+        public String NumOk;
     }
 
     [Database]

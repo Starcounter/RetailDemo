@@ -47,6 +47,7 @@ namespace PokerDemoConsole {
         public Int32 NumWorkers = 1;
         public UInt16 ServerPort = 8080;
         public UInt16 AggregationPort = 9191;
+        public Boolean UseAggregation = true;
         public String ServerIp = "127.0.0.1";
         public TestTypes TestType = TestTypes.PokerDemo;
         public Int32 NumTestRequestsEachWorker = 5000000;
@@ -102,6 +103,7 @@ namespace PokerDemoConsole {
                     Console.WriteLine("-ServerIp=127.0.0.1");
                     Console.WriteLine("-ServerPort=8080");
                     Console.WriteLine("-AggregationPort=9191");
+                    Console.WriteLine("-UseAggregation=True");
                     Console.WriteLine("-NumTestRequestsEachWorker=5000000");
                     Console.WriteLine("-Inserting=False");
                     Console.WriteLine("-TestType=[PokerDemo, Gateway, Echo, GatewayNoIPC, GatewayAndIPC, GatewayNoIPCNoChunks]");
@@ -138,6 +140,9 @@ namespace PokerDemoConsole {
 
                 } else if (arg.StartsWith("-AggregationPort=")) {
                     AggregationPort = UInt16.Parse(arg.Substring("-AggregationPort=".Length));
+
+                } else if (arg.StartsWith("-UseAggregation=")) {
+                    UseAggregation = Boolean.Parse(arg.Substring("-UseAggregation=".Length));
 
                 } else if (arg.StartsWith("-NumTestRequestsEachWorker=")) {
                     NumTestRequestsEachWorker = Int32.Parse(arg.Substring("-NumTestRequestsEachWorker=".Length));
@@ -273,10 +278,10 @@ namespace PokerDemoConsole {
         Boolean IsDone();
 
         /// <summary>
-        /// Incrementing number of good responses.
+        /// Incrementing number of responses.
         /// </summary>
         /// <param name="num"></param>
-        void IncrementTotalGoodResponses(Int32 num);
+        void IncrementTotalNumResponses(Int32 num);
     }
 
     enum RequestTypes {
@@ -290,7 +295,8 @@ namespace PokerDemoConsole {
     class WorkerSettings {
         public Int32 NumBodyCharacters;
         public CountdownEvent WaitForAllWorkersEvent;
-        public Int32 NumGoodResponses;
+        public Int32 NumTotalFailResponses;
+        public Int32 NumTotalOkResponses;
         public Int32 WorkersRPS;
         public Int32 ExitCode;
     };
@@ -469,7 +475,7 @@ namespace PokerDemoConsole {
 SEND_DATA:
 
                     // Checking if we have any requests.
-                    if ((totalNumSentRequests - ws_.NumGoodResponses) <= RequestResponseBalance) {
+                    if ((totalNumSentRequests - (ws_.NumTotalOkResponses + ws_.NumTotalFailResponses)) <= RequestResponseBalance) {
 
                         Int32 offset = 0;
 
@@ -599,15 +605,17 @@ SEND_DATA:
                     numRecvBytes += restartOffset;
 
                     Int64 numBodyBytes = 0;
-                    Int32 numResponses = 0;
+                    Int32 numOkResponses = 0;
+                    Int32 numFailResponses = 0;
                     Int64 checksum = 0;
 
                     // Checking that responses are correct.
-                    CheckResponses(recvBuf, numRecvBytes, out restartOffset, out numResponses, out numBodyBytes, out checksum);
+                    CheckResponses(recvBuf, numRecvBytes, out restartOffset, out numOkResponses, out numFailResponses, out numBodyBytes, out checksum);
 
                     // Incrementing counters.
-                    ws_.NumGoodResponses += numResponses;
-                    rc.IncrementTotalGoodResponses(numResponses);
+                    ws_.NumTotalOkResponses += numOkResponses;
+                    ws_.NumTotalFailResponses += numFailResponses;
+                    rc.IncrementTotalNumResponses(numFailResponses + numOkResponses);
                     totalNumBodyBytes += numBodyBytes;
                     totalChecksum += checksum;
                 }
@@ -621,15 +629,16 @@ SEND_DATA:
                 aggrTcpClient.Close();
 
                 // Calculating worker RPS.
-                ws_.WorkersRPS = (Int32) (ws_.NumGoodResponses * 1000.0 / timer.ElapsedMilliseconds);
+                ws_.WorkersRPS = (Int32) ((ws_.NumTotalOkResponses + ws_.NumTotalFailResponses) * 1000.0 / timer.ElapsedMilliseconds);
 
                 lock (ws_) {
 
-                    Console.WriteLine(String.Format("[{0}]: Took time {1} ms for {2} requests (with {3} responses), meaning worker RPS {4}.",
+                    Console.WriteLine(String.Format("[{0}]: Took time {1} ms for {2} requests (with {3} OK and {4} FAIL responses), meaning worker RPS {5}.",
                         workerId_,
                         timer.ElapsedMilliseconds,
                         totalNumSentRequests,
-                        ws_.NumGoodResponses,
+                        ws_.NumTotalOkResponses,
+                        ws_.NumTotalFailResponses,
                         ws_.WorkersRPS));
                 }
 
@@ -648,23 +657,19 @@ SEND_DATA:
         /// <summary>
         /// Checks responses for correctness.
         /// </summary>
-        /// <param name="buf"></param>
-        /// <param name="numBytes"></param>
-        /// <param name="restartOffset"></param>
-        /// <param name="numProcessedResponses"></param>
-        /// <param name="numProcessedBodyBytes"></param>
-        /// <param name="outChecksum"></param>
         unsafe void CheckResponses(
             Byte[] buf,
             Int32 numBytes,
             out Int32 restartOffset,
-            out Int32 numProcessedResponses,
+            out Int32 numOkResponses,
+            out Int32 numFailResponses,
             out Int64 numProcessedBodyBytes,
             out Int64 outChecksum) {
 
             Int32 numUnprocessedBytes = numBytes, offset = 0;
 
-            numProcessedResponses = 0;
+            numOkResponses = 0;
+            numFailResponses = 0;
             numProcessedBodyBytes = 0;
             restartOffset = 0;
             outChecksum = 0;
@@ -696,14 +701,17 @@ SEND_DATA:
                         (buf[offset + AggregationStructSizeBytes + 1] != 'T') ||
                         (buf[offset + AggregationStructSizeBytes + 9] != '2')) {
 
-                        String respString = Marshal.PtrToStringAnsi(new IntPtr(p + offset + AggregationStructSizeBytes), ags->size_bytes_);
+                        numFailResponses++;
+                        //String respString = Marshal.PtrToStringAnsi(new IntPtr(p + offset + AggregationStructSizeBytes), ags->size_bytes_);
+                        //throw new ArgumentOutOfRangeException("Incorrect HTTP response received: " + respString);
 
-                        throw new ArgumentOutOfRangeException("Incorrect HTTP response received: " + respString);
+                    } else {
+
+                        numOkResponses++;
                     }
 
                     outChecksum += ags->unique_aggr_index_;
                     numProcessedBodyBytes += ags->size_bytes_;
-                    numProcessedResponses++;
 
                     numUnprocessedBytes -= AggregationStructSizeBytes + ags->size_bytes_;
 
@@ -719,9 +727,9 @@ SEND_DATA:
     class LiveRequestCreator : IRequestsCreator {
 
         /// <summary>
-        /// Total number of good responses.
+        /// Total number of responses.
         /// </summary>
-        Int32 totalGoodResponses_ = 0;
+        Int32 totalResponses_ = 0;
 
         /// <summary>
         /// Total number of requests.
@@ -756,7 +764,7 @@ SEND_DATA:
         /// <summary>
         /// Customers.
         /// </summary>
-        readonly CustomerAndAccounts[] customers_;
+        readonly CustomerAndAccountsJson[] customers_;
 
         /// <summary>
         /// Random with seed 0.
@@ -814,7 +822,7 @@ SEND_DATA:
 
             randomRequestTypes_ = new Byte[totalNumPlannedRequests_];
 
-            customers_ = new CustomerAndAccounts[settings_.NumCustomers];
+            customers_ = new CustomerAndAccountsJson[settings_.NumCustomers];
 
             String dir = AppDomain.CurrentDomain.BaseDirectory;
             String[] allNames = File.ReadAllLines(Path.Combine(dir, "Names.txt"));
@@ -834,7 +842,7 @@ SEND_DATA:
                     n++;
                 }
 
-                customers_[i] = new CustomerAndAccounts();
+                customers_[i] = new CustomerAndAccountsJson();
                 customers_[i].CustomerId = customersAndAccountsIds[curIdIndex];
                 curIdIndex++;
 
@@ -882,11 +890,11 @@ SEND_DATA:
         }
 
         /// <summary>
-        /// Incrementing total good number of responses.
+        /// Incrementing total number of responses.
         /// </summary>
         /// <param name="num"></param>
-        public void IncrementTotalGoodResponses(Int32 num) {
-            Interlocked.Add(ref totalGoodResponses_, num);
+        public void IncrementTotalNumResponses(Int32 num) {
+            Interlocked.Add(ref totalResponses_, num);
         }
 
         /// <summary>
@@ -919,7 +927,7 @@ SEND_DATA:
 
                 RequestTypes rt = (RequestTypes) randomRequestTypes_[offset];
                 Request r = new Request();
-                CustomerAndAccounts c = customers_[rand.Next(settings_.NumCustomers)];
+                CustomerAndAccountsJson c = customers_[rand.Next(settings_.NumCustomers)];
 
                 switch (rt) {
 
@@ -934,8 +942,8 @@ SEND_DATA:
 
                     case RequestTypes.TransferMoneyBetweenTwoAccounts: {
 
-                        CustomerAndAccounts c1 = c;
-                        CustomerAndAccounts c2 = customers_[rand.Next(settings_.NumCustomers)];
+                        CustomerAndAccountsJson c1 = c;
+                        CustomerAndAccountsJson c2 = customers_[rand.Next(settings_.NumCustomers)];
 
                         Int32 amountToTransfer = rand.Next(1, Settings.MaxTransferAmount);
 
@@ -985,7 +993,7 @@ SEND_DATA:
         /// </summary>
         /// <returns></returns>
         public Boolean IsDone() {
-            return totalGoodResponses_ == totalNumPlannedRequests_;
+            return totalResponses_ == totalNumPlannedRequests_;
         }
     }
 
@@ -1000,9 +1008,9 @@ SEND_DATA:
         StreamReader fs_;
 
         /// <summary>
-        /// Total number of good responses.
+        /// Total number of responses.
         /// </summary>
-        Int32 totalGoodResponses_ = 0;
+        Int32 totalNumResponses_ = 0;
 
         /// <summary>
         /// Total number of requests.
@@ -1015,11 +1023,11 @@ SEND_DATA:
         static readonly String lockObject_ = "locker";
 
         /// <summary>
-        /// Incrementing total good number of responses.
+        /// Incrementing total number of responses.
         /// </summary>
         /// <param name="num"></param>
-        public void IncrementTotalGoodResponses(Int32 num) {
-            Interlocked.Add(ref totalGoodResponses_, num);
+        public void IncrementTotalNumResponses(Int32 num) {
+            Interlocked.Add(ref totalNumResponses_, num);
         }
 
         /// <summary>
@@ -1037,7 +1045,7 @@ SEND_DATA:
         /// </summary>
         /// <returns></returns>
         public Boolean IsDone() {
-            return totalGoodResponses_ == totalNumRequests_;
+            return totalNumResponses_ == totalNumRequests_;
         }
 
         /// <summary>
@@ -1205,6 +1213,16 @@ SEND_DATA:
     class RetailClient {
 
         /// <summary>
+        /// Total number of failed responses since last statistics transfer.
+        /// </summary>
+        static Int32 lastTotalNumFailResponses_ = 0;
+
+        /// <summary>
+        /// Total number of successful responses since last statistics transfer.
+        /// </summary>
+        static Int32 lastTotalNumOkResponses_ = 0;
+
+        /// <summary>
         /// Reports performance statistics to database.
         /// </summary>
         static void ReportPerformanceStats(
@@ -1212,19 +1230,28 @@ SEND_DATA:
             Node nodeClient,
             Stopwatch timer) {
 
-            // Sending last statistics information.
-            Int32 numGoodResponses = 0;
+            // Collecting number of failed responses from each worker.
+            Int32 totalNumFailResponses = 0;
             for (Int32 i = 0; i < workerSettings.Length; i++) {
-                numGoodResponses += workerSettings[i].NumGoodResponses;
+                totalNumFailResponses += workerSettings[i].NumTotalFailResponses;
             }
 
-            // Creating stats URL.
-            String statsUri = String.Format("/addstats/{0}/{1}/{2}",
-                Settings.LocalIPAddress.ToString(),
-                numGoodResponses,
-                (Int32) (numGoodResponses * 1000.0 / timer.ElapsedMilliseconds));
+            Int32 numFailResponses = totalNumFailResponses - lastTotalNumFailResponses_;
+            lastTotalNumFailResponses_ = totalNumFailResponses;
 
-            Response resp = nodeClient.POST(statsUri, "NoBody", null);
+            // Collecting number of successful responses from each worker.
+            Int32 totalNumOkResponses = 0;
+            for (Int32 i = 0; i < workerSettings.Length; i++) {
+                totalNumOkResponses += workerSettings[i].NumTotalOkResponses;
+            }
+
+            Int32 numOkResponses = totalNumOkResponses - lastTotalNumOkResponses_;
+            lastTotalNumOkResponses_ = totalNumOkResponses;
+
+            // Creating stats URL.
+            String statsUri = "/addstats?numFail=" + numFailResponses + "&numOk=" + numOkResponses;
+
+            Response resp = nodeClient.GET(statsUri);
 
             if (!resp.IsSuccessStatusCode) {
                 throw new Exception("Can't update test statistics: " + resp.Body);
@@ -1253,7 +1280,8 @@ SEND_DATA:
                     workerSettings[i] = new WorkerSettings() {
                         NumBodyCharacters = 8,
                         WaitForAllWorkersEvent = waitForAllWorkersEvent,
-                        NumGoodResponses = 0,
+                        NumTotalOkResponses = 0,
+                        NumTotalFailResponses = 0,
                         WorkersRPS = 0,
                         ExitCode = 0
                     };
@@ -1342,8 +1370,11 @@ SEND_DATA:
                 while (waitForAllWorkersEvent.CurrentCount > 0) {
 
                     lock (settings) {
+
                         for (Int32 i = 0; i < settings.NumWorkers; i++) {
-                            Console.WriteLine(String.Format("[{0}] number of good responses: {1}", i, workerSettings[i].NumGoodResponses));
+
+                            Console.WriteLine(String.Format("[{0}] total number of OK responses: {1} ({2} failed).",
+                                i, workerSettings[i].NumTotalOkResponses, workerSettings[i].NumTotalFailResponses));
                         }
                     }
 
