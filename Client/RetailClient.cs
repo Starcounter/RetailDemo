@@ -1,4 +1,5 @@
-﻿using Starcounter;
+﻿#define INSERT_ONLY
+using Starcounter;
 using Starcounter.Internal;
 using System;
 using System.Collections;
@@ -17,6 +18,7 @@ namespace PokerDemoConsole {
 
     class Settings {
 
+        public const String Separator = "----------------------------------";
         public const Int32 MaxAccountsPerCustomer = 5;
         public const Int32 MinInitialBalance = 10;
         public const Int32 MaxInitialBalance = 100000;
@@ -24,18 +26,23 @@ namespace PokerDemoConsole {
         public const Int32 SendStatsNumSeconds = 10;
         
         public Int32 NumCustomers = 100000;
+
+#if INSERT_ONLY
+
         public Int32 NumTransferMoneyBetweenTwoAccounts = 0;
         public Int32 NumGetCustomerAndAccounts = 0;
         public Int32 NumGetCustomerById = 0;
         public Int32 NumGetCustomerByFullName = 0;
         public Boolean Inserting = true;
+#else
 
-//         public Int32 NumCustomers = 10000;
-//         public Int32 NumTransferMoneyBetweenTwoAccounts = 1000000;
-//         public Int32 NumGetCustomerAndAccounts = 1000000;
-//         public Int32 NumGetCustomerById = 1000000;
-//         public Int32 NumGetCustomerByFullName = 1000000;
-//         public Boolean Inserting = false;
+        public Int32 NumTransferMoneyBetweenTwoAccounts = 1000000;
+        public Int32 NumGetCustomerAndAccounts = 1000000;
+        public Int32 NumGetCustomerById = 1000000;
+        public Int32 NumGetCustomerByFullName = 1000000;
+        public Boolean Inserting = false;
+
+#endif
         
         public Int32 NumWorkers = 1;
         public UInt16 ServerPort = 8080;
@@ -45,17 +52,31 @@ namespace PokerDemoConsole {
         public Int32 NumTestRequestsEachWorker = 5000000;
 
         /// <summary>
+        /// This local IP address.
+        /// </summary>
+        static IPAddress localIpAddress_ = null;
+
+        /// <summary>
         /// IP address of the this machine.
         /// </summary>
         public static IPAddress LocalIPAddress {
 
             get {
+
+                if (null != localIpAddress_)
+                    return localIpAddress_;
+
                 IPHostEntry host = Dns.GetHostEntry(Dns.GetHostName());
+
                 foreach (IPAddress ip in host.AddressList) {
+
                     if (ip.AddressFamily == AddressFamily.InterNetwork) {
-                        return ip;
+
+                        localIpAddress_ = ip;
+                        return localIpAddress_;
                     }
                 }
+
                 return null;
             }
         }
@@ -132,6 +153,7 @@ namespace PokerDemoConsole {
                 }
             }
 
+            // Checking correctness of parameters.
             if ((NumCustomers < 0) ||
                 (NumTransferMoneyBetweenTwoAccounts < 0) ||
                 (NumGetCustomerAndAccounts < 0) ||
@@ -162,14 +184,14 @@ namespace PokerDemoConsole {
             }
 
             Console.WriteLine("NumWorkers: " + NumWorkers);
+            Console.WriteLine("ServerIp: " + ServerIp);
             Console.WriteLine("ServerPort: " + ServerPort);
             Console.WriteLine("AggregationPort: " + AggregationPort);
-            Console.WriteLine("ServerIp: " + ServerIp);
             Console.WriteLine("TestType: " + TestType);
             Console.WriteLine("NumTestRequestsEachWorker: " + NumTestRequestsEachWorker);
-            Console.WriteLine("Inserting: " + Inserting);
             Console.WriteLine();
 
+            Console.WriteLine("Inserting: " + Inserting);
             Console.WriteLine("NumInsertCustomers: " + NumCustomers);
             Console.WriteLine("NumTransferMoneyBetweenTwoAccounts: " + NumTransferMoneyBetweenTwoAccounts);
             Console.WriteLine("NumGetCustomerAndAccounts: " + NumGetCustomerAndAccounts);
@@ -568,6 +590,7 @@ SEND_DATA:
                     if (aggrTcpClient.Available > 0) {
                         numRecvBytes = aggrTcpClient.Receive(recvBuf, restartOffset, recvBuf.Length - restartOffset, SocketFlags.None);
                     } else {
+                        Thread.Sleep(1);
                         goto SEND_DATA;
                     }
 
@@ -597,7 +620,8 @@ SEND_DATA:
 
                 aggrTcpClient.Close();
 
-                ws_.WorkersRPS = (Int32) (ws_.NumGoodResponses / (timer.ElapsedMilliseconds / 1000.0));
+                // Calculating worker RPS.
+                ws_.WorkersRPS = (Int32) (ws_.NumGoodResponses * 1000.0 / timer.ElapsedMilliseconds);
 
                 lock (ws_) {
 
@@ -702,7 +726,7 @@ SEND_DATA:
         /// <summary>
         /// Total number of requests.
         /// </summary>
-        Int32 totalNumRequests_ = 0;
+        Int32 totalNumPlannedRequests_ = 0;
 
         /// <summary>
         /// Number of processed requests.
@@ -771,17 +795,24 @@ SEND_DATA:
                 workerRandoms_[i] = new Random(BitConverter.ToInt32(Settings.LocalIPAddress.GetAddressBytes(), 0));
             }
 
-            totalNumRequests_ = 
-                settings_.NumGetCustomerAndAccounts +
-                settings_.NumGetCustomerByFullName +
-                settings_.NumGetCustomerById +
-                settings_.NumTransferMoneyBetweenTwoAccounts;
-
+            // Calculating total number of planned requests.
             if (settings_.Inserting) {
-                totalNumRequests_ += settings_.NumCustomers;
+
+                totalNumPlannedRequests_ = settings_.NumCustomers;
+
+            } else {
+
+                totalNumPlannedRequests_ =
+                    settings_.NumGetCustomerAndAccounts +
+                    settings_.NumGetCustomerByFullName +
+                    settings_.NumGetCustomerById +
+                    settings_.NumTransferMoneyBetweenTwoAccounts;
             }
 
-            randomRequestTypes_ = new Byte[totalNumRequests_];
+            Console.WriteLine(Settings.Separator);
+            Console.WriteLine(String.Format("I'm going to perform {0} requests on {1} worker(s).", totalNumPlannedRequests_, settings_.NumWorkers));
+
+            randomRequestTypes_ = new Byte[totalNumPlannedRequests_];
 
             customers_ = new CustomerAndAccounts[settings_.NumCustomers];
 
@@ -807,7 +838,7 @@ SEND_DATA:
                 customers_[i].CustomerId = customersAndAccountsIds[curIdIndex];
                 curIdIndex++;
 
-                customers_[i].FullName = allNames[rand0_.Next(allNames.Length)] + " " + allSurnames[rand0_.Next(allSurnames.Length)];
+                customers_[i].FullName = allNames[rand0_.Next(allNames.Length)] + allSurnames[rand0_.Next(allSurnames.Length)];
 
                 Int32 numAccounts = 1 + rand0_.Next(Settings.MaxAccountsPerCustomer);
 
@@ -841,9 +872,9 @@ SEND_DATA:
             }
 
             // Shuffling all request types.
-            for (Int32 i = 0; i < totalNumRequests_; i++) {
+            for (Int32 i = 0; i < totalNumPlannedRequests_; i++) {
 
-                Int32 r = rand0_.Next(totalNumRequests_);
+                Int32 r = rand0_.Next(totalNumPlannedRequests_);
                 Byte p = randomRequestTypes_[i];
                 randomRequestTypes_[i] = randomRequestTypes_[r];
                 randomRequestTypes_[r] = p;
@@ -954,10 +985,13 @@ SEND_DATA:
         /// </summary>
         /// <returns></returns>
         public Boolean IsDone() {
-            return totalGoodResponses_ == totalNumRequests_;
+            return totalGoodResponses_ == totalNumPlannedRequests_;
         }
     }
 
+    /// <summary>
+    /// File based request creator.
+    /// </summary>
     class FileBasedRequestCreator : IRequestsCreator {
 
         /// <summary>
@@ -1170,6 +1204,33 @@ SEND_DATA:
 
     class RetailClient {
 
+        /// <summary>
+        /// Reports performance statistics to database.
+        /// </summary>
+        static void ReportPerformanceStats(
+            WorkerSettings[] workerSettings,
+            Node nodeClient,
+            Stopwatch timer) {
+
+            // Sending last statistics information.
+            Int32 numGoodResponses = 0;
+            for (Int32 i = 0; i < workerSettings.Length; i++) {
+                numGoodResponses += workerSettings[i].NumGoodResponses;
+            }
+
+            // Creating stats URL.
+            String statsUri = String.Format("/addstats/{0}/{1}/{2}",
+                Settings.LocalIPAddress.ToString(),
+                numGoodResponses,
+                (Int32) (numGoodResponses * 1000.0 / timer.ElapsedMilliseconds));
+
+            Response resp = nodeClient.POST(statsUri, "NoBody", null);
+
+            if (!resp.IsSuccessStatusCode) {
+                throw new Exception("Can't update test statistics: " + resp.Body);
+            }
+        }
+
         // Pre-loading Starcounter dependencies.
         static Int32 ScPreloadError = StarcounterResolver.LoadDependencies();
 
@@ -1185,8 +1246,7 @@ SEND_DATA:
                 CountdownEvent waitForAllWorkersEvent = new CountdownEvent(settings.NumWorkers);
 
                 Node nodeClient = new Node(settings.ServerIp, settings.ServerPort);
-                Response statsResp;
-                Int32 numGoodResponses = 0;
+                Response nodeResp;
 
                 for (Int32 i = 0; i < settings.NumWorkers; i++) {
 
@@ -1199,10 +1259,8 @@ SEND_DATA:
                     };
                 }
 
-                Console.Write("Preparing requests...");
-
                 Stopwatch timer = new Stopwatch();
-                timer.Start();
+                timer.Restart();
 
                 Boolean useRequestsFile = false;
                 IRequestsCreator irc = null;
@@ -1246,10 +1304,28 @@ SEND_DATA:
 
                 timer.Stop();
 
-                Console.WriteLine("Done. Took ms: " + timer.ElapsedMilliseconds);
+                Console.WriteLine(Settings.Separator);
+                Console.WriteLine("Preparing requests took ms: " + timer.ElapsedMilliseconds);
 
-                timer = new Stopwatch();
-                timer.Start();
+                // Cleaning database when inserting.
+                if (settings.Inserting) {
+
+                    timer.Restart();
+                    nodeResp = nodeClient.GET("/init");
+                    timer.Stop();
+
+                    if (!nodeResp.IsSuccessStatusCode) {
+                        throw new Exception("Can't re-initialize the database: " + nodeResp.Body);
+                    }
+
+                    Console.WriteLine(Settings.Separator);
+                    Console.WriteLine("Re-initialize the database took ms: " + timer.ElapsedMilliseconds);
+                }
+
+                Console.WriteLine(Settings.Separator);
+
+                // Restarting measuring.
+                timer.Restart();
 
                 for (Int32 i = 0; i < settings.NumWorkers; i++) {
                     Int32 workerId = i;
@@ -1279,20 +1355,13 @@ SEND_DATA:
 
                         numSecondsLastStat = Settings.SendStatsNumSeconds;
 
-                        numGoodResponses = 0;
-                        for (Int32 i = 0; i < settings.NumWorkers; i++) {
-                            numGoodResponses += workerSettings[i].NumGoodResponses;
-                        }
-
-                        statsResp = nodeClient.POST("/addstats/" + Settings.LocalIPAddress + "/" + numGoodResponses, "NoBody", null);
-                        if (!statsResp.IsSuccessStatusCode) {
-                            throw new Exception("Can't update test statistics!");
-                        }
+                        // Doing REST call to send statistics to server.
+                        ReportPerformanceStats(workerSettings, nodeClient, timer);
                     }
 
                     maxWorkerTimeSeconds--;
                     if (0 == maxWorkerTimeSeconds) {
-                        throw new Exception("One of workers timed out!");
+                        throw new TimeoutException("One of workers timed out!");
                     }
                 }
 
@@ -1311,18 +1380,10 @@ SEND_DATA:
                     totalRPS += workerSettings[i].WorkersRPS;
                 }
 
-                // Sending last statistics information.
-                numGoodResponses = 0;
-                for (Int32 i = 0; i < settings.NumWorkers; i++) {
-                    numGoodResponses += workerSettings[i].NumGoodResponses;
-                }
+                // Doing REST call to send statistics to server.
+                ReportPerformanceStats(workerSettings, nodeClient, timer);
 
-                statsResp = nodeClient.POST("/addstats/" + Settings.LocalIPAddress + "/" + numGoodResponses, "NoBody", null);
-                if (!statsResp.IsSuccessStatusCode) {
-                    throw new Exception("Can't update test statistics!");
-                }
-
-                Console.WriteLine(String.Format("Summary: total RPS is {0}, total time {1} ms.", totalRPS, timer.ElapsedMilliseconds));
+                Console.WriteLine(String.Format("SUMMARY: Total workers RPS is {0}, total time {1} ms.", totalRPS, timer.ElapsedMilliseconds));
 
                 return 0;
 
