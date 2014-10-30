@@ -58,6 +58,7 @@ app.get('/init', function (req, res) {
                 "CREATE TABLE IF NOT EXISTS ClientStats (Received TIMESTAMP, ClientIp VARCHAR(32), NumFails INT, NumOk INT)",
                 "DELETE FROM Account",
                 "DELETE FROM Customer",
+                "DELETE FROM ClientStats",
                 "DROP PROCEDURE IF EXISTS AccountBalanceTransfer",
                 "CREATE PROCEDURE AccountBalanceTransfer (fromId INT, toId INT, amount INT) NOT DETERMINISTIC MODIFIES SQL DATA SQL SECURITY DEFINER" +
                 "  this_proc:BEGIN" +
