@@ -47,7 +47,7 @@ namespace PokerDemoConsole {
         public Int32 NumWorkers = 1;
         public UInt16 ServerPort = 8080;
         public UInt16 AggregationPort = 9191;
-        public Boolean UseAggregation = true;
+        public Boolean UseAggregation = false;
         public String ServerIp = "127.0.0.1";
         public TestTypes TestType = TestTypes.PokerDemo;
         public Int32 NumTestRequestsEachWorker = 5000000;
@@ -293,12 +293,22 @@ namespace PokerDemoConsole {
     }
 
     class WorkerSettings {
+
+        public IRequestsCreator Irc;
         public Int32 NumBodyCharacters;
         public CountdownEvent WaitForAllWorkersEvent;
         public Int32 NumTotalFailResponses;
         public Int32 NumTotalOkResponses;
         public Int32 WorkersRPS;
         public Int32 ExitCode;
+
+        public void SafeIncrementNumTotalFailResponses() {
+            Interlocked.Add(ref NumTotalFailResponses, 1);
+        }
+
+        public void SafeIncrementNumTotalOkResponses() {
+            Interlocked.Add(ref NumTotalOkResponses, 1);
+        }
     };
 
     class Worker {
@@ -400,10 +410,131 @@ namespace PokerDemoConsole {
         }
 
         /// <summary>
-        /// Main worker routine.
+        /// Checking responses on asynchronous node call.
+        /// </summary>
+        static void CheckResponsesAsyncNode(Response resp, Object userObject) {
+
+            WorkerSettings ws = (WorkerSettings) userObject;
+
+            if (resp.IsSuccessStatusCode) {
+                ws.SafeIncrementNumTotalOkResponses();
+            } else {
+                ws.SafeIncrementNumTotalFailResponses();
+            }
+
+            ws.Irc.IncrementTotalNumResponses(1);
+        }
+
+        /// <summary>
+        /// No aggregation worker routine.
         /// </summary>
         /// <param name="rc"></param>
-        public unsafe void WorkerRoutine(IRequestsCreator rc) {
+        public unsafe void WorkerNoAggregationRoutine(IRequestsCreator rc) {
+
+            try {
+
+                Node node = new Node(globalSettings_.ServerIp, globalSettings_.ServerPort, 0, false);
+
+                Int32 totalNumSentRequests = 0;
+                
+                // Preallocating requests array.
+                RequestData[] reqData = new RequestData[NumRequestsInSingleSend];
+                for (Int32 i = 0; i < NumRequestsInSingleSend; i++) {
+                    reqData[i] = new RequestData(1024);
+                }
+
+                Stopwatch timer = Stopwatch.StartNew();
+
+                while(true) {
+
+                    Int32 numRequestsToSend = rc.GetABunchOfRequests(reqData, workerId_);
+
+                    // Checking if we have any requests to send.
+                    if (numRequestsToSend > 0) {
+
+                        for (Int32 i = 0; i < numRequestsToSend; i++) {
+
+                            if (false) {
+
+                                // Performing call on this worker's node.
+                                Response resp = node.DoRESTRequestAndGetResponse(
+                                    null,
+                                    null,
+                                    null,
+                                    null,
+                                    null,
+                                    null,
+                                    0,
+                                    null,
+                                    reqData[i].DataBytes,
+                                    reqData[i].DataLength);
+
+                                // Checking for correct responses.
+                                CheckResponsesAsyncNode(resp, ws_);
+
+                            } else {
+
+                                // Performing call on this worker's node.
+                                node.DoRESTRequestAndGetResponse(
+                                    null,
+                                    null,
+                                    null,
+                                    null,
+                                    CheckResponsesAsyncNode,
+                                    ws_,
+                                    0,
+                                    null,
+                                    reqData[i].DataBytes,
+                                    reqData[i].DataLength);
+                            }
+
+                            totalNumSentRequests++;
+                        }
+
+                    }  else {
+
+                        // Checking if all requests/responses were processed.
+                        if (rc.IsDone())
+                            break;
+
+                        // Waiting a bit.
+                        Thread.Sleep(1);
+                    }
+                }
+               
+                timer.Stop();
+
+                // Calculating worker RPS.
+                ws_.WorkersRPS = (Int32) ((ws_.NumTotalOkResponses + ws_.NumTotalFailResponses) * 1000.0 / timer.ElapsedMilliseconds);
+
+                lock (ws_) {
+
+                    Console.WriteLine(String.Format("[{0}]: Took time {1} ms for {2} requests (with {3} OK and {4} FAIL responses), meaning worker RPS {5}.",
+                        workerId_,
+                        timer.ElapsedMilliseconds,
+                        totalNumSentRequests,
+                        ws_.NumTotalOkResponses,
+                        ws_.NumTotalFailResponses,
+                        ws_.WorkersRPS));
+                }
+
+            } catch (Exception exc) {
+
+                Console.WriteLine(exc.ToString());
+
+                ws_.ExitCode = 1;
+
+            } finally {
+
+                ws_.WaitForAllWorkersEvent.Signal();
+            }
+        }
+
+        /// <summary>
+        /// Aggregation worker routine.
+        /// </summary>
+        /// <param name="rc"></param>
+        public unsafe void WorkerAggregationRoutine(IRequestsCreator rc) {
 
             try {
 
@@ -443,31 +574,35 @@ namespace PokerDemoConsole {
                 aggrTcpClient.Send(sendBuf, AggregationStructSizeBytes, SocketFlags.None);
                 Int32 numRecvBytes = aggrTcpClient.Receive(recvBuf);
 
-                if (numRecvBytes != AggregationStructSizeBytes)
+                if (numRecvBytes != AggregationStructSizeBytes) {
                     throw new ArgumentOutOfRangeException("Wrong aggregation data size received.");
+                }
 
                 fixed (Byte* p = recvBuf) {
                     agsOrig = *(AggregationStruct*)p;
                 }
 
-                if (agsOrig.port_number_ != globalSettings_.ServerPort)
+                if (agsOrig.port_number_ != globalSettings_.ServerPort) {
                     throw new ArgumentOutOfRangeException("Wrong aggregation port number received.");
+                }
 
-                if (agsOrig.msg_type_ != (Byte) AggregationMessageTypes.AGGR_CREATE_SOCKET)
+                if (agsOrig.msg_type_ != (Byte) AggregationMessageTypes.AGGR_CREATE_SOCKET) {
                     throw new ArgumentOutOfRangeException("Wrong aggregated message type received.");
+                }
 
                 Int64 totalNumBodyBytes = 0;
                 Int64 totalChecksum = 0;
                 Int32 restartOffset = 0;
                 Int32 totalNumSentRequests = 0;
                 Int64 origChecksum = 0;
-                Stopwatch timer = Stopwatch.StartNew();
-            
+                            
                 // Preallocating requests array.
                 RequestData[] reqData = new RequestData[NumRequestsInSingleSend];
                 for (Int32 i = 0; i < NumRequestsInSingleSend; i++) {
                     reqData[i] = new RequestData(1024);
                 }
+
+                Stopwatch timer = Stopwatch.StartNew();
 
                 // Until we have requests.
                 while (true) {
@@ -729,7 +864,7 @@ SEND_DATA:
         /// <summary>
         /// Total number of responses.
         /// </summary>
-        Int32 totalResponses_ = 0;
+        Int32 totalNumResponses_ = 0;
 
         /// <summary>
         /// Total number of requests.
@@ -894,7 +1029,7 @@ SEND_DATA:
         /// </summary>
         /// <param name="num"></param>
         public void IncrementTotalNumResponses(Int32 num) {
-            Interlocked.Add(ref totalResponses_, num);
+            Interlocked.Add(ref totalNumResponses_, num);
         }
 
         /// <summary>
@@ -993,7 +1128,7 @@ SEND_DATA:
         /// </summary>
         /// <returns></returns>
         public Boolean IsDone() {
-            return totalResponses_ == totalNumPlannedRequests_;
+            return totalNumResponses_ == totalNumPlannedRequests_;
         }
     }
 
@@ -1269,23 +1404,10 @@ SEND_DATA:
                 Settings settings = new Settings();
                 settings.Init(args);
 
-                WorkerSettings[] workerSettings = new WorkerSettings[settings.NumWorkers];
                 CountdownEvent waitForAllWorkersEvent = new CountdownEvent(settings.NumWorkers);
 
                 Node nodeClient = new Node(settings.ServerIp, settings.ServerPort);
                 Response nodeResp;
-
-                for (Int32 i = 0; i < settings.NumWorkers; i++) {
-
-                    workerSettings[i] = new WorkerSettings() {
-                        NumBodyCharacters = 8,
-                        WaitForAllWorkersEvent = waitForAllWorkersEvent,
-                        NumTotalOkResponses = 0,
-                        NumTotalFailResponses = 0,
-                        WorkersRPS = 0,
-                        ExitCode = 0
-                    };
-                }
 
                 Stopwatch timer = new Stopwatch();
                 timer.Restart();
@@ -1330,6 +1452,20 @@ SEND_DATA:
                     irc = grc;
                 }
 
+                WorkerSettings[] workerSettings = new WorkerSettings[settings.NumWorkers];
+                for (Int32 i = 0; i < settings.NumWorkers; i++) {
+
+                    workerSettings[i] = new WorkerSettings() {
+                        Irc = irc,
+                        NumBodyCharacters = 8,
+                        WaitForAllWorkersEvent = waitForAllWorkersEvent,
+                        NumTotalOkResponses = 0,
+                        NumTotalFailResponses = 0,
+                        WorkersRPS = 0,
+                        ExitCode = 0
+                    };
+                }
+
                 timer.Stop();
 
                 Console.WriteLine(Settings.Separator);
@@ -1358,12 +1494,20 @@ SEND_DATA:
                 for (Int32 i = 0; i < settings.NumWorkers; i++) {
                     Int32 workerId = i;
                     Worker worker = new Worker(workerId, workerSettings[workerId], settings);
-                    ThreadStart threadDelegate = new ThreadStart(() => worker.WorkerRoutine(irc));
+                    ThreadStart threadDelegate;
+
+                    // Checking if aggregation is enabled.
+                    if (settings.UseAggregation) {
+                        threadDelegate = new ThreadStart(() => worker.WorkerAggregationRoutine(irc));
+                    } else {
+                        threadDelegate = new ThreadStart(() => worker.WorkerNoAggregationRoutine(irc));
+                    }
+
                     Thread newThread = new Thread(threadDelegate);
                     newThread.Start();
                 }
 
-                Int32 maxWorkerTimeSeconds = 100;
+                Int32 maxWorkerTimeSeconds = 1000;
                 Int32 numSecondsLastStat = Settings.SendStatsNumSeconds;
 
                 // Looping until worker finish events are set.
