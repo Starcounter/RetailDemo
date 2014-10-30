@@ -6,10 +6,70 @@ namespace ScRetailDemo {
 
     class ScRetailDemo {
 
+        // Statistics locker.
+        const String statsLocker_ = "Locker";
+
+        class ClientStats {
+            public String ClientIp;
+            public String NumResponses;
+            public String RPS;
+        }
+
+        // Holds statistics from each client.
+        static Dictionary<String, ClientStats> clientsStats_ = new Dictionary<String, ClientStats>();
+
         static void Main() {
+
+            // Handler that adds statistics.
+            Handle.POST("/addstats/{?}/{?}/{?}", (String ip, String numResponses, String rps) => {
+
+                lock(statsLocker_) {
+
+                    ClientStats cs = null;
+                    clientsStats_.TryGetValue(ip, out cs);
+
+                    // Checking if this client already has statistics.
+                    if (cs == null) {
+
+                        clientsStats_[ip] = new ClientStats() {
+                            ClientIp = ip,
+                            NumResponses = numResponses,
+                            RPS = rps
+                        };
+
+                    } else {
+
+                        cs.NumResponses = numResponses;
+                        cs.RPS = rps;
+                    }
+                }
+
+                return 200;
+            });
+
+            // Getting client statistics.
+            Handle.GET("/stats", () => {
+
+                List<String> list = new List<String>();
+
+                lock (statsLocker_) {
+
+                    // Printing information about each client.
+                    foreach (KeyValuePair<String, ClientStats> k in clientsStats_) {
+
+                        String s = String.Format("\"ClientIp\":\"{0}\",\"TotalResponses\":\"{1}\",\"ApproximateRps\":\"{2}\"",
+                            k.Key, k.Value.NumResponses, k.Value.RPS);
+
+                        list.Add("{" + s + "}");
+                    }
+                }
+
+                return "{\"ClientInfos\":[" + String.Join(",", list.ToArray()) + "]}";
+            });
 
             Handle.GET("/init", () => {
 
+                // Creating all needed indexes.
                 CreateIndexes();
 
                 // https://github.com/Starcounter/Starcounter/issues/1602
@@ -74,6 +134,7 @@ namespace ScRetailDemo {
         }
 
         private static void CreateIndexes() {
+
             if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountIdIndex").First == null)
                 Db.SQL("CREATE UNIQUE INDEX AccountIdIndex ON Account (AccountId asc)");
 

@@ -3,6 +3,8 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2012
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScRetailDemo", "Starcounter\ScRetailDemo.csproj", "{E479D7F7-C56A-4BE9-9370-DC9CA665A752}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailClient", "Client\RetailClient.csproj", "{3EDA54DC-57C2-4127-B033-606923FA6215}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -13,6 +15,10 @@ Global
 		{E479D7F7-C56A-4BE9-9370-DC9CA665A752}.Debug|x64.Build.0 = Debug|x64
 		{E479D7F7-C56A-4BE9-9370-DC9CA665A752}.Release|x64.ActiveCfg = Release|x64
 		{E479D7F7-C56A-4BE9-9370-DC9CA665A752}.Release|x64.Build.0 = Release|x64
+		{3EDA54DC-57C2-4127-B033-606923FA6215}.Debug|x64.ActiveCfg = Debug|x64
+		{3EDA54DC-57C2-4127-B033-606923FA6215}.Debug|x64.Build.0 = Debug|x64
+		{3EDA54DC-57C2-4127-B033-606923FA6215}.Release|x64.ActiveCfg = Release|x64
+		{3EDA54DC-57C2-4127-B033-606923FA6215}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
