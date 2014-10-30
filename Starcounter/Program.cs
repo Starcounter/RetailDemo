@@ -59,7 +59,7 @@ namespace ScRetailDemo {
                 return 201;
             });
 
-            Handle.POST("/transfer?f={?}&t={?}&x={?}", (int fromId, int toId, int amount) => {
+            Handle.GET("/transfer?f={?}&t={?}&x={?}", (int fromId, int toId, int amount) => {
                 Db.Transaction(() => {
                     Account source = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", fromId).First;
                     Account target = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", toId).First;

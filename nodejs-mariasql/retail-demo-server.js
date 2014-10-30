@@ -7,6 +7,7 @@ var db_config = {
     user: 'retail',
     password: 'xyzzy',
     db: 'retail',
+    multiStatements: true,
 }
 
 var inspect = require('util').inspect;
@@ -17,28 +18,66 @@ var express = require('express')
 var c = new Client();
 
 var app = express();
-app.use(bodyParser.urlencoded({ extended: false }))
-app.use(bodyParser.json())
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
 
-app.get('/init', function (req, res) {
-    // Create tables and make sure they're empty
-    c.query("CREATE TABLE IF NOT EXISTS Customer (CustomerId INT PRIMARY KEY, FullName VARCHAR(32), INDEX FullNameIndex (FullName))")
+function run_query(res, next_query, callback) {
+    console.log(next_query);
+    c.query(next_query)
     .on('error', function(err) {
-        res.status(500).send(err.message);
+        callback(err);
     })
     .on('result', function(dbres) {
-        c.query("CREATE TABLE IF NOT EXISTS Account (AccountId INT PRIMARY KEY, CustomerId INT, Balance INT, FOREIGN KEY (CustomerId) REFERENCES Customer(CustomerId) ON DELETE CASCADE)")
-        .on('error', function(err) {
-            res.status(500).send(err.message);
+        query_result = [];
+        dbres
+        .on('row', function(row) {
+            query_result.push(row);
         })
-        .on('result', function(dbres) {
-            c.query("DELETE FROM Customer");
-            c.query("DELETE FROM Account");
-        })
-        .on('end', function(dbres) {
-            res.send('Initialized.');
+        .on('end', function(info) {
+            callback(query_result);
         })
     })
+}
+
+function process_query_list(res, next_query) {
+    if (next_query) {
+        run_query(res, next_query, function(query_result) {
+            res.query_results.push(query_result);
+            return process_query_list(res, res.query_list.shift());
+        })
+    } else {
+        res.json(res.query_results);
+    }
+}
+
+app.get('/init', function (req, res) {
+    res.query_list =
+            [
+                "CREATE TABLE IF NOT EXISTS Customer (CustomerId INT PRIMARY KEY, FullName VARCHAR(32) NOT NULL, INDEX FullNameIndex (FullName))",
+                "CREATE TABLE IF NOT EXISTS Account (AccountId INT PRIMARY KEY, AccountType INT DEFAULT 0, Balance INT DEFAULT 0, CustomerId INT NOT NULL, FOREIGN KEY (CustomerId) REFERENCES Customer(CustomerId) ON DELETE CASCADE)",
+                "DELETE FROM Account",
+                "DELETE FROM Customer",
+                "DROP PROCEDURE IF EXISTS AccountBalanceTransfer",
+                "CREATE PROCEDURE AccountBalanceTransfer (fromId INT, toId INT, amount INT) NOT DETERMINISTIC MODIFIES SQL DATA SQL SECURITY DEFINER" +
+                "  this_proc:BEGIN" +
+                "    START TRANSACTION;" +
+                "    UPDATE Account SET Balance = Balance - amount WHERE AccountId = fromId;" +
+                "    IF ROW_COUNT() = 1 THEN" +
+                "      BEGIN" +
+                "        UPDATE Account SET Balance = Balance + amount WHERE AccountId = toId;" +
+                "        IF ROW_COUNT() = 1 THEN" +
+                "          BEGIN" +
+                "            COMMIT;" +
+                "            LEAVE this_proc;" +
+                "          END;" +
+                "        END IF;" +
+                "      END;" +
+                "    END IF;" +
+                "    ROLLBACK;" +
+                "  END;"
+            ];
+    res.query_results = [];
+    process_query_list(res, res.query_list.shift());
 });
 
 /*
@@ -53,7 +92,7 @@ app.get("/serverAggregates", function (req, res) {
     })
     .on('result', function(dbres) {
         dbres.on('row', function(row) {
-            res.send('AccountBalanceTotal=' + row.Total)
+            res.send('AccountBalanceTotal=' + row.Total);
         })
     })
 });
@@ -75,7 +114,33 @@ Handle.PUT("/customers/{?}", (int customerId, CustomerAndAccounts json) => {
 });
 */
 app.post("/customers/:id", function (req, res) {
-    res.json(req.body)
+    c.query("INSERT INTO Customer VALUES (?, ?)", [req.params.id, req.body.FullName])
+    .on('error', function(err) {
+        res.status(500).send(err.message);
+    })
+    .on('result', function(dbres) {
+        dbres.on('error', function(err) {
+            res.status(409).send(err.message);
+        })
+        .on('end', function(info) {
+            res.status(201);
+            messages = '';
+            for (n in req.body.Accounts) {
+                c.query("INSERT INTO Account VALUES (?, ?, ?, ?)",[req.body.Accounts[n].AccountId, req.body.Accounts[n].AccountType, req.body.Accounts[n].Balance, req.params.id])
+                .on('error', function(err) {
+                    messages += 'Account: ' + err.message + "\r\n";
+                    res.status(500);
+                })
+                .on('result', function(dbres) {
+                    dbres.on('error', function(err) {
+                        messages += 'Account: ' + err.message + "\r\n";
+                        res.status(409);
+                    })
+                })
+            }
+            res.send(messages);
+        })
+    })
 });
 
 /*
@@ -86,7 +151,7 @@ Handle.GET("/customers/{?}", (int customerId) => {
 });
 */
 app.get("/customers/:id", function (req, res) {
-    c.query("SELECT * FROM Customer WHERE CustomerId = " + c.escape(req.params.id))
+    c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
     .on('error', function(err) {
         res.status(500).send(err.message);
     })
@@ -107,14 +172,58 @@ Handle.GET("/dashboard/{?}", (int customerId) => {
     json.Data = Db.SQL("SELECT p FROM Customer p WHERE CustomerId = ?", customerId).First;
     return new Response() { BodyBytes = json.ToJsonUtf8() };
 });
+*/
+app.get("/dashboard/:id", function (req, res) {
+    c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
+    .on('error', function(err) {
+        res.status(500).send(err.message);
+    })
+    .on('result', function(customer_res) {
+        customer_res.on('row', function(customer_row) {
+            customer_row.Accounts = [];
+            c.query("SELECT * FROM Account WHERE CustomerId = ?", [req.params.id])
+            .on('result', function(account_res) {
+                account_res.on('row', function(account_row) {
+                    customer_row.Accounts.push(account_row);
+                })
+                .on('end', function(info) {
+                    res.json(customer_row);
+                })
+            })
+        })
+        .on('end', function(info) {
+            if (!info.numRows)
+                res.sendStatus(204)
+        })
+    })
+});
 
+/*
 Handle.GET("/customers?f={?}", (string fullName) => {
     var json = new CustomerJson();
     json.Data = Db.SQL("SELECT p FROM Customer p WHERE FullName = ?", fullName).First;
     return new Response() { BodyBytes = json.ToJsonUtf8() };
 });
+*/
+app.get("/customers", function (req, res) {
+    c.query("SELECT * FROM Customer WHERE FullName = ?", [req.query.f])
+    .on('error', function(err) {
+        res.status(500).send(err.message);
+    })
+    .on('result', function(dbres) {
+        dbres
+        .on('row', function(row) {
+            res.json(row)
+        })
+        .on('end', function(info) {
+            if (!info.numRows)
+                res.sendStatus(404)
+        })
+    })
+});
 
 
+/*
 Handle.POST("/transfer?f={?}&t={?}&x={?}", (int fromId, int toId, int amount) => {
     Db.Transaction(() => {
         Account source = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", fromId).First;
@@ -128,7 +237,21 @@ Handle.POST("/transfer?f={?}&t={?}&x={?}", (int fromId, int toId, int amount) =>
     return 200;
 });
 */
-
+app.get("/transfer", function (req, res) {
+    c.query("CALL AccountBalanceTransfer(?, ?, ?)", [req.query.f, req.query.t, req.query.x], true)
+    .on('error', function(err) {
+        res.status(500).send(err.message);
+    })
+    .on('result', function(dbres) {
+        dbres
+        .on('error', function(err) {
+            res.status(500).send(err.message);
+        })
+    })
+    .on('end', function(info) {
+        res.sendStatus(204);
+    })
+});
 
 app.get("/check", function (req, res) {
     var body = '<html><body>';
