@@ -48,6 +48,7 @@ namespace PokerDemoConsole {
 //         public UInt16 ServerPort = 3000;
 //         public Boolean UseAggregation = false;
 
+        public Boolean DoAsyncNode = true;
         public Int32 NumWorkers = 1;
         
         public String ServerIp = "127.0.0.1";
@@ -110,6 +111,8 @@ namespace PokerDemoConsole {
                     Console.WriteLine("-ServerPort=8080");
                     Console.WriteLine("-AggregationPort=9191");
                     Console.WriteLine("-UseAggregation=True");
+                    Console.WriteLine("-DoAsyncNode=True");
+
                     Console.WriteLine("-NumTestRequestsEachWorker=5000000");
                     Console.WriteLine("-Inserting=False");
                     Console.WriteLine("-TestType=[PokerDemo, Gateway, Echo, GatewayNoIPC, GatewayAndIPC, GatewayNoIPCNoChunks]");
@@ -149,6 +152,9 @@ namespace PokerDemoConsole {
 
                 } else if (arg.StartsWith("-UseAggregation=")) {
                     UseAggregation = Boolean.Parse(arg.Substring("-UseAggregation=".Length));
+
+                } else if (arg.StartsWith("-DoAsyncNode=")) {
+                    DoAsyncNode = Boolean.Parse(arg.Substring("-DoAsyncNode=".Length));
 
                 } else if (arg.StartsWith("-NumTestRequestsEachWorker=")) {
                     NumTestRequestsEachWorker = Int32.Parse(arg.Substring("-NumTestRequestsEachWorker=".Length));
@@ -198,6 +204,8 @@ namespace PokerDemoConsole {
             Console.WriteLine("ServerIp: " + ServerIp);
             Console.WriteLine("ServerPort: " + ServerPort);
             Console.WriteLine("AggregationPort: " + AggregationPort);
+            Console.WriteLine("DoAsyncNode: " + DoAsyncNode);
+            
             Console.WriteLine("TestType: " + TestType);
             Console.WriteLine("NumTestRequestsEachWorker: " + NumTestRequestsEachWorker);
             Console.WriteLine();
@@ -461,7 +469,8 @@ namespace PokerDemoConsole {
 
                         for (Int32 i = 0; i < numRequestsToSend; i++) {
 
-                            if (true) {
+                            // Checking if we are using sync or async node calls.
+                            if (!globalSettings_.DoAsyncNode) {
 
                                 // Performing call on this worker's node.
                                 Response resp = node.DoRESTRequestAndGetResponse(
