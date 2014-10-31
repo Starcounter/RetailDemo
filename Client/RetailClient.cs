@@ -20,12 +20,12 @@ namespace PokerDemoConsole {
 
         public const String Separator = "----------------------------------";
         public const Int32 MaxAccountsPerCustomer = 5;
-        public const Int32 MinInitialBalance = 10;
-        public const Int32 MaxInitialBalance = 100000;
+        public const Int32 MinInitialBalance = 0;
+        public const Int32 MaxInitialBalance = 0;
         public const Int32 MaxTransferAmount = 1000;
         public const Int32 SendStatsNumSeconds = 10;
         
-        public Int32 NumCustomers = 100000;
+        public Int32 NumCustomers = 1000;
 
 #if INSERT_ONLY
 
@@ -44,11 +44,17 @@ namespace PokerDemoConsole {
 
 #endif
         
+//         public String ServerIp = "192.168.60.186";
+//         public UInt16 ServerPort = 3000;
+//         public Boolean UseAggregation = false;
+
         public Int32 NumWorkers = 1;
-        public UInt16 ServerPort = 8080;
-        public UInt16 AggregationPort = 9191;
-        public Boolean UseAggregation = false;
+        
         public String ServerIp = "127.0.0.1";
+        public UInt16 ServerPort = 8080;
+        public Boolean UseAggregation = false;
+
+        public UInt16 AggregationPort = 9191;
         public TestTypes TestType = TestTypes.PokerDemo;
         public Int32 NumTestRequestsEachWorker = 5000000;
 
@@ -996,8 +1002,8 @@ SEND_DATA:
                 }
             }
 
-            for (Int32 i = 0; i < settings_.NumGetCustomerAndAccounts; i++) {
-                randomRequestTypes_[n] = (Byte)RequestTypes.GetCustomerAndAccounts;
+            for (Int32 i = 0; i < settings_.NumTransferMoneyBetweenTwoAccounts; i++) {
+                randomRequestTypes_[n] = (Byte)RequestTypes.TransferMoneyBetweenTwoAccounts;
                 n++;
             }
 
@@ -1365,8 +1371,7 @@ SEND_DATA:
         /// </summary>
         static void ReportPerformanceStats(
             WorkerSettings[] workerSettings,
-            Node nodeClient,
-            Stopwatch timer) {
+            Node nodeClient) {
 
             // Collecting number of failed responses from each worker.
             Int32 totalNumFailResponses = 0;
@@ -1494,6 +1499,9 @@ SEND_DATA:
                 // Restarting measuring.
                 timer.Restart();
 
+                // Doing REST call to send statistics to server.
+                ReportPerformanceStats(workerSettings, nodeClient);
+
                 for (Int32 i = 0; i < settings.NumWorkers; i++) {
                     Int32 workerId = i;
                     Worker worker = new Worker(workerId, workerSettings[workerId], settings);
@@ -1520,8 +1528,11 @@ SEND_DATA:
 
                         for (Int32 i = 0; i < settings.NumWorkers; i++) {
 
-                            Console.WriteLine(String.Format("[{0}] total number of OK responses: {1} ({2} failed).",
-                                i, workerSettings[i].NumTotalOkResponses, workerSettings[i].NumTotalFailResponses));
+                            // Calculating worker RPS.
+                            Int32 approxWorkersRPS = (Int32)((workerSettings[i].NumTotalOkResponses + workerSettings[i].NumTotalFailResponses) * 1000.0 / timer.ElapsedMilliseconds);
+
+                            Console.WriteLine(String.Format("[{0}] total num OK resps: {1} ({2} failed) with approx RPS {3}.",
+                                i, workerSettings[i].NumTotalOkResponses, workerSettings[i].NumTotalFailResponses, approxWorkersRPS));
                         }
                     }
 
@@ -1534,7 +1545,7 @@ SEND_DATA:
                         numSecondsLastStat = Settings.SendStatsNumSeconds;
 
                         // Doing REST call to send statistics to server.
-                        ReportPerformanceStats(workerSettings, nodeClient, timer);
+                        ReportPerformanceStats(workerSettings, nodeClient);
                     }
 
                     maxWorkerTimeSeconds--;
@@ -1559,7 +1570,7 @@ SEND_DATA:
                 }
 
                 // Doing REST call to send statistics to server.
-                ReportPerformanceStats(workerSettings, nodeClient, timer);
+                ReportPerformanceStats(workerSettings, nodeClient);
 
                 Console.WriteLine(String.Format("SUMMARY: Total workers RPS is {0}, total time {1} ms.", totalRPS, timer.ElapsedMilliseconds));
 
