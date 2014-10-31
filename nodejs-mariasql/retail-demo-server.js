@@ -175,8 +175,11 @@ app.post("/customers/:id", function (req, res) {
     process_query_list(res, res.query_list.shift());
 });
 
+var pq_customers_id = c.prepare('SELECT * FROM Customer WHERE CustomerId = ?');
+
 app.get("/customers/:id", function (req, res) {
-    c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
+    // c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
+    c.query(pq_customers_id([req.params.id]))
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -192,8 +195,11 @@ app.get("/customers/:id", function (req, res) {
     })
 });
 
+var pq_dashboard = c.prepare('SELECT * FROM Customer WHERE CustomerId = ?');
+
 app.get("/dashboard/:id", function (req, res) {
-    c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
+    // c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
+    c.query(pq_dashboard([req.params.id]))
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -218,8 +224,11 @@ app.get("/dashboard/:id", function (req, res) {
     })
 });
 
+var pq_customers_fullname = c.prepare('SELECT * FROM Customer WHERE FullName = ?');
+
 app.get("/customers", function (req, res) {
-    c.query("SELECT * FROM Customer WHERE FullName = ?", [req.query.f])
+    //c.query("SELECT * FROM Customer WHERE FullName = ?", [req.query.f])
+    c.query(pq_customers_fullname([req.query.f]))
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -240,8 +249,11 @@ app.get("/customers", function (req, res) {
     })
 });
 
+var pq_transfer = c.prepare('CALL AccountBalanceTransfer(?, ?, ?)');
+
 app.get("/transfer", function (req, res) {
-    c.query("CALL AccountBalanceTransfer(?, ?, ?)", [req.query.f, req.query.t, req.query.x], true)
+    // c.query("CALL AccountBalanceTransfer(?, ?, ?)", [req.query.f, req.query.t, req.query.x], true)
+    c.query(pq_transfer([req.query.f, req.query.t, req.query.x]), true)
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
