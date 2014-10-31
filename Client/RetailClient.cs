@@ -419,6 +419,7 @@ namespace PokerDemoConsole {
             if (resp.IsSuccessStatusCode) {
                 ws.SafeIncrementNumTotalOkResponses();
             } else {
+                Console.WriteLine("FAIL " + resp.ToString());
                 ws.SafeIncrementNumTotalFailResponses();
             }
 
@@ -454,7 +455,7 @@ namespace PokerDemoConsole {
 
                         for (Int32 i = 0; i < numRequestsToSend; i++) {
 
-                            if (false) {
+                            if (true) {
 
                                 // Performing call on this worker's node.
                                 Response resp = node.DoRESTRequestAndGetResponse(
@@ -838,6 +839,7 @@ SEND_DATA:
 
                         numFailResponses++;
                         //String respString = Marshal.PtrToStringAnsi(new IntPtr(p + offset + AggregationStructSizeBytes), ags->size_bytes_);
+                        //Console.WriteLine("Incorrect HTTP response received: " + respString);
                         //throw new ArgumentOutOfRangeException("Incorrect HTTP response received: " + respString);
 
                     } else {
