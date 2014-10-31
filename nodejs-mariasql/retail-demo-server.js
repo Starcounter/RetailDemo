@@ -1,7 +1,7 @@
 // https://www.npmjs.org/package/mariasql
 // https://github.com/strongloop/express
 
-
+var listen_port = '3000';
 var db_config = {
     host: '127.0.0.1',
     user: 'retail',
@@ -86,12 +86,13 @@ app.get('/init', function (req, res) {
                 "  END;"
             ];
     res.query_results = [];
+    res.status(204);
     process_query_list(res, res.query_list.shift());
 });
 
-// /addstats?numfail=X&numok=Y
+// /addstats?numFail=X&numOk=Y
 app.get("/addstats", function (req, res) {
-    c.query("INSERT INTO ClientStats VALUES (NOW(), ?, ?, ?)", [req.ip, req.query.numfail, req.query.numok], true)
+    c.query("INSERT INTO ClientStats VALUES (NOW(), ?, ?, ?)", [req.ip, req.query.numFail, req.query.numOk], true)
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -174,8 +175,11 @@ app.post("/customers/:id", function (req, res) {
     process_query_list(res, res.query_list.shift());
 });
 
+var pq_customers_id = c.prepare('SELECT * FROM Customer WHERE CustomerId = ?');
+
 app.get("/customers/:id", function (req, res) {
-    c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
+    // c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
+    c.query(pq_customers_id([req.params.id]))
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -191,8 +195,11 @@ app.get("/customers/:id", function (req, res) {
     })
 });
 
+var pq_dashboard = c.prepare('SELECT * FROM Customer WHERE CustomerId = ?');
+
 app.get("/dashboard/:id", function (req, res) {
-    c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
+    // c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
+    c.query(pq_dashboard([req.params.id]))
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -217,26 +224,36 @@ app.get("/dashboard/:id", function (req, res) {
     })
 });
 
+var pq_customers_fullname = c.prepare('SELECT * FROM Customer WHERE FullName = ?');
+
 app.get("/customers", function (req, res) {
-    c.query("SELECT * FROM Customer WHERE FullName = ?", [req.query.f])
+    //c.query("SELECT * FROM Customer WHERE FullName = ?", [req.query.f])
+    c.query(pq_customers_fullname([req.query.f]))
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
+        res.query_result = [];
         dbres
         .on('row', function(row) {
-            res.json(row)
+            res.query_result.push(row);
         })
         .on('end', function(info) {
-            if (!info.numRows)
-                res.sendStatus(404)
+            if (!info.numRows) {
+                res.sendStatus(404);
+            } else {
+                res.json(res.query_result);
+            }
         })
     })
 });
 
+var pq_transfer = c.prepare('CALL AccountBalanceTransfer(?, ?, ?)');
+
 app.get("/transfer", function (req, res) {
-    c.query("CALL AccountBalanceTransfer(?, ?, ?)", [req.query.f, req.query.t, req.query.x], true)
+    // c.query("CALL AccountBalanceTransfer(?, ?, ?)", [req.query.f, req.query.t, req.query.x], true)
+    c.query(pq_transfer([req.query.f, req.query.t, req.query.x]), true)
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -273,11 +290,15 @@ app.get('/', function (req, res) {
 })
 
 if (!module.parent) {
+    var args = process.argv.slice(2);
+    for (n in args) {
+        listen_port = args[n];
+    }
     console.log('Using database config "' + db_config.user + '@' + db_config.host + '"');
     c.connect(db_config);
     c.on('connect', function() {
-        console.log('Starting application on port 3000');
-        app.listen(3000);
+        console.log('Starting application on port ' + listen_port);
+        app.listen(listen_port);
     })
     .on('error', function(err) {
         console.log(err.message);
