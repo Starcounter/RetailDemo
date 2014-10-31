@@ -1,7 +1,7 @@
 // https://www.npmjs.org/package/mariasql
 // https://github.com/strongloop/express
 
-
+var listen_port = '3000';
 var db_config = {
     host: '127.0.0.1',
     user: 'retail',
@@ -86,12 +86,13 @@ app.get('/init', function (req, res) {
                 "  END;"
             ];
     res.query_results = [];
+    res.status(204);
     process_query_list(res, res.query_list.shift());
 });
 
-// /addstats?numfail=X&numok=Y
+// /addstats?numFail=X&numOk=Y
 app.get("/addstats", function (req, res) {
-    c.query("INSERT INTO ClientStats VALUES (NOW(), ?, ?, ?)", [req.ip, req.query.numfail, req.query.numok], true)
+    c.query("INSERT INTO ClientStats VALUES (NOW(), ?, ?, ?)", [req.ip, req.query.numFail, req.query.numOk], true)
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -224,13 +225,17 @@ app.get("/customers", function (req, res) {
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
+        res.query_result = [];
         dbres
         .on('row', function(row) {
-            res.json(row)
+            res.query_result.push(row);
         })
         .on('end', function(info) {
-            if (!info.numRows)
-                res.sendStatus(404)
+            if (!info.numRows) {
+                res.sendStatus(404);
+            } else {
+                res.json(res.query_result);
+            }
         })
     })
 });
@@ -273,11 +278,15 @@ app.get('/', function (req, res) {
 })
 
 if (!module.parent) {
+    var args = process.argv.slice(2);
+    for (n in args) {
+        listen_port = args[n];
+    }
     console.log('Using database config "' + db_config.user + '@' + db_config.host + '"');
     c.connect(db_config);
     c.on('connect', function() {
-        console.log('Starting application on port 3000');
-        app.listen(3000);
+        console.log('Starting application on port ' + listen_port);
+        app.listen(listen_port);
     })
     .on('error', function(err) {
         console.log(err.message);
