@@ -1070,6 +1070,7 @@ SEND_DATA:
 
                         r.Method = "POST";
                         r.Uri = "/customers/" + customers_[offset].CustomerId;
+                        r.ContentType = "application/json";
                         r.BodyBytes = customers_[offset].ToJsonUtf8();
 
                         break;
@@ -1082,7 +1083,7 @@ SEND_DATA:
 
                         Int32 amountToTransfer = rand.Next(1, Settings.MaxTransferAmount);
 
-                        r.Method = "POST";
+                        r.Method = "GET";
                         r.Uri = "/transfer?f=" + c1.Accounts[rand.Next(c1.Accounts.Count)].AccountId +
                             "&t=" + c2.Accounts[rand.Next(c2.Accounts.Count)].AccountId +
                             "&x=" + amountToTransfer;
