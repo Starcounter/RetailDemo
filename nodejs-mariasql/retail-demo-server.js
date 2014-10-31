@@ -22,9 +22,11 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 function run_query(res, next_query, callback) {
-    console.log(next_query);
     c.query(next_query)
     .on('error', function(err) {
+        console.log(next_query);
+        console.log(err);
+        res.status(500);
         callback(err);
     })
     .on('result', function(dbres) {
@@ -46,7 +48,12 @@ function process_query_list(res, next_query) {
             return process_query_list(res, res.query_list.shift());
         })
     } else {
-        res.json(res.query_results);
+        if (res.statusCode < 300) {
+            res.sendStatus(res.statusCode);
+        } else {
+            console.log(res.statusCode + ": " + req.query_results);
+            res.json(res.query_results);
+        }
     }
 }
 
@@ -86,12 +93,13 @@ app.get('/init', function (req, res) {
 app.get("/addstats", function (req, res) {
     c.query("INSERT INTO ClientStats VALUES (NOW(), ?, ?, ?)", [req.ip, req.query.numfail, req.query.numok], true)
     .on('error', function(err) {
+        console.log(err);
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
         dbres
         .on('end', function(info) {
-            res.sendStatus(204);
+            res.sendStatus(200);
         })
     })
 });
@@ -121,6 +129,7 @@ app.get("/stats", function (req, res) {
     res.ClientInfos = [];
     c.query("SELECT * FROM ClientStats")
     .on('error', function(err) {
+        console.log(err);
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
@@ -137,6 +146,7 @@ app.get("/stats", function (req, res) {
 app.get("/serverAggregates", function (req, res) {
     c.query("SELECT SUM(Balance) AS Total FROM Account")
     .on('error', function(err) {
+        console.log(err);
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
@@ -148,38 +158,26 @@ app.get("/serverAggregates", function (req, res) {
 
 
 app.post("/customers/:id", function (req, res) {
-    c.query("INSERT INTO Customer VALUES (?, ?)", [req.params.id, req.body.FullName])
-    .on('error', function(err) {
-        res.status(500).send(err.message);
-    })
-    .on('result', function(dbres) {
-        dbres.on('error', function(err) {
-            res.status(409).send(err.message);
-        })
-        .on('end', function(info) {
-            res.status(201);
-            messages = '';
-            for (n in req.body.Accounts) {
-                c.query("INSERT INTO Account VALUES (?, ?, ?, ?)",[req.body.Accounts[n].AccountId, req.body.Accounts[n].AccountType, req.body.Accounts[n].Balance, req.params.id])
-                .on('error', function(err) {
-                    messages += 'Account: ' + err.message + "\r\n";
-                    res.status(500);
-                })
-                .on('result', function(dbres) {
-                    dbres.on('error', function(err) {
-                        messages += 'Account: ' + err.message + "\r\n";
-                        res.status(409);
-                    })
-                })
-            }
-            res.send(messages);
-        })
-    })
+    res.query_list = ["INSERT INTO Customer VALUES (" + req.params.id + ", '" + c.escape(req.body.FullName) + "')"];
+    for (n in req.body.Accounts) {
+        if (typeof req.body.Accounts[n].AccountType == 'undefined')
+            req.body.Accounts[n].AccountType = 0;
+        res.query_list.push(
+                    "INSERT INTO Account VALUES (" +
+                    req.body.Accounts[n].AccountId + ", " +
+                    req.body.Accounts[n].AccountType + ", " +
+                    req.body.Accounts[n].Balance + ", " +
+                    req.params.id +
+                    ")");
+    }
+    res.query_results = [];
+    process_query_list(res, res.query_list.shift());
 });
 
 app.get("/customers/:id", function (req, res) {
     c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
     .on('error', function(err) {
+        console.log(err);
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
@@ -188,7 +186,7 @@ app.get("/customers/:id", function (req, res) {
         })
         .on('end', function(info) {
             if (!info.numRows)
-                res.sendStatus(204)
+                res.sendStatus(200)
         })
     })
 });
@@ -196,6 +194,7 @@ app.get("/customers/:id", function (req, res) {
 app.get("/dashboard/:id", function (req, res) {
     c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
     .on('error', function(err) {
+        console.log(err);
         res.status(500).send(err.message);
     })
     .on('result', function(customer_res) {
@@ -221,6 +220,7 @@ app.get("/dashboard/:id", function (req, res) {
 app.get("/customers", function (req, res) {
     c.query("SELECT * FROM Customer WHERE FullName = ?", [req.query.f])
     .on('error', function(err) {
+        console.log(err);
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
@@ -238,16 +238,18 @@ app.get("/customers", function (req, res) {
 app.get("/transfer", function (req, res) {
     c.query("CALL AccountBalanceTransfer(?, ?, ?)", [req.query.f, req.query.t, req.query.x], true)
     .on('error', function(err) {
+        console.log(err);
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
         dbres
         .on('error', function(err) {
+            console.log(err);
             res.status(500).send(err.message);
         })
     })
     .on('end', function(info) {
-        res.sendStatus(204);
+        res.sendStatus(200);
     })
 });
 
