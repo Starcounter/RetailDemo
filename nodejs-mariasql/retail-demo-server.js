@@ -295,7 +295,10 @@ if (!module.parent) {
     for (n in args) {
         listen_port = args[n];
     }
-    console.log('Using database config "' + db_config.user + '@' + db_config.host + '"');
+    if (db_config.unixSocket)
+        console.log('Using database config "' + db_config.user + ' @ unix:' + db_config.unixSocket + '"');
+    else
+        console.log('Using database config "' + db_config.user + ' @ tcp:' + db_config.host + '"');
     c.connect(db_config);
     c.on('connect', function() {
         console.log('Starting application on port ' + listen_port);
