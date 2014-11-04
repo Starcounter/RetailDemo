@@ -3,7 +3,8 @@
 
 var listen_port = '3000';
 var db_config = {
-    host: '127.0.0.1',
+    unixSocket: '/var/run/mysqld/mysqld.sock',
+    // host: '127.0.0.1',
     user: 'retail',
     password: 'xyzzy',
     db: 'retail',
