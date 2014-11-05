@@ -1,5 +1,4 @@
-﻿#define INSERT_ONLY
-using Starcounter;
+﻿using Starcounter;
 using Starcounter.Internal;
 using System;
 using System.Collections;
@@ -25,16 +24,14 @@ namespace PokerDemoConsole {
         public const Int32 MaxTransferAmount = 1000;
         public const Int32 SendStatsNumSeconds = 10;
         
-        public Int32 NumCustomers = 1000;
+        public Int32 NumCustomers = 10000;
 
-#if INSERT_ONLY
+//         public Int32 NumTransferMoneyBetweenTwoAccounts = 0;
+//         public Int32 NumGetCustomerAndAccounts = 0;
+//         public Int32 NumGetCustomerById = 0;
+//         public Int32 NumGetCustomerByFullName = 0;
+//         public Boolean Inserting = true;
 
-        public Int32 NumTransferMoneyBetweenTwoAccounts = 0;
-        public Int32 NumGetCustomerAndAccounts = 0;
-        public Int32 NumGetCustomerById = 0;
-        public Int32 NumGetCustomerByFullName = 0;
-        public Boolean Inserting = true;
-#else
 
         public Int32 NumTransferMoneyBetweenTwoAccounts = 1000000;
         public Int32 NumGetCustomerAndAccounts = 1000000;
@@ -42,15 +39,15 @@ namespace PokerDemoConsole {
         public Int32 NumGetCustomerByFullName = 1000000;
         public Boolean Inserting = false;
 
-#endif
-        
+
 //         public String ServerIp = "192.168.60.186";
 //         public UInt16 ServerPort = 3000;
 //         public Boolean UseAggregation = false;
 
         public Boolean DoAsyncNode = true;
         public Int32 NumWorkers = 1;
-        
+
+        public Boolean SendStatistics = true;
         public String ServerIp = "127.0.0.1";
         public UInt16 ServerPort = 8080;
         public Boolean UseAggregation = false;
@@ -112,6 +109,7 @@ namespace PokerDemoConsole {
                     Console.WriteLine("-AggregationPort=9191");
                     Console.WriteLine("-UseAggregation=True");
                     Console.WriteLine("-DoAsyncNode=True");
+                    Console.WriteLine("-SendStatistics=True");
 
                     Console.WriteLine("-NumTestRequestsEachWorker=5000000");
                     Console.WriteLine("-Inserting=False");
@@ -162,6 +160,9 @@ namespace PokerDemoConsole {
                 } else if (arg.StartsWith("-Inserting=")) {
                     Inserting = Boolean.Parse(arg.Substring("-Inserting=".Length));
 
+                } else if (arg.StartsWith("-SendStatistics=")) {
+                    SendStatistics = Boolean.Parse(arg.Substring("-SendStatistics=".Length));
+
                 } else if (arg.StartsWith("-TestType=")) {
                     TestType = (TestTypes)Int32.Parse(arg.Substring("-TestType=".Length));
 
@@ -204,6 +205,8 @@ namespace PokerDemoConsole {
             Console.WriteLine("ServerIp: " + ServerIp);
             Console.WriteLine("ServerPort: " + ServerPort);
             Console.WriteLine("AggregationPort: " + AggregationPort);
+            Console.WriteLine("UseAggregation: " + UseAggregation);
+            Console.WriteLine("SendStatistics: " + SendStatistics);
             Console.WriteLine("DoAsyncNode: " + DoAsyncNode);
             
             Console.WriteLine("TestType: " + TestType);
@@ -1379,8 +1382,13 @@ SEND_DATA:
         /// Reports performance statistics to database.
         /// </summary>
         static void ReportPerformanceStats(
+            Settings settings,
             WorkerSettings[] workerSettings,
             Node nodeClient) {
+
+            // Checking if we send the statistics.
+            if (!settings.SendStatistics)
+                return;
 
             // Collecting number of failed responses from each worker.
             Int32 totalNumFailResponses = 0;
@@ -1509,7 +1517,7 @@ SEND_DATA:
                 timer.Restart();
 
                 // Doing REST call to send statistics to server.
-                ReportPerformanceStats(workerSettings, nodeClient);
+                ReportPerformanceStats(settings, workerSettings, nodeClient);
 
                 for (Int32 i = 0; i < settings.NumWorkers; i++) {
                     Int32 workerId = i;
@@ -1554,7 +1562,7 @@ SEND_DATA:
                         numSecondsLastStat = Settings.SendStatsNumSeconds;
 
                         // Doing REST call to send statistics to server.
-                        ReportPerformanceStats(workerSettings, nodeClient);
+                        ReportPerformanceStats(settings, workerSettings, nodeClient);
                     }
 
                     maxWorkerTimeSeconds--;
@@ -1579,7 +1587,7 @@ SEND_DATA:
                 }
 
                 // Doing REST call to send statistics to server.
-                ReportPerformanceStats(workerSettings, nodeClient);
+                ReportPerformanceStats(settings, workerSettings, nodeClient);
 
                 Console.WriteLine(String.Format("SUMMARY: Total workers RPS is {0}, total time {1} ms.", totalRPS, timer.ElapsedMilliseconds));
 
