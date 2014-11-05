@@ -73,19 +73,21 @@ app.get('/init', function (req, res) {
                 "CREATE PROCEDURE AccountBalanceTransfer (fromId INT, toId INT, amount INT) NOT DETERMINISTIC MODIFIES SQL DATA SQL SECURITY DEFINER" +
                 "  this_proc:BEGIN" +
                 "    START TRANSACTION;" +
-                "    UPDATE Account SET Balance = Balance - amount WHERE AccountId = fromId;" +
+                "    UPDATE Account SET Balance = Balance - amount WHERE AccountId = fromId AND Balance >= amount;" +
                 "    IF ROW_COUNT() = 1 THEN" +
                 "      BEGIN" +
                 "        UPDATE Account SET Balance = Balance + amount WHERE AccountId = toId;" +
                 "        IF ROW_COUNT() = 1 THEN" +
                 "          BEGIN" +
                 "            COMMIT;" +
+                "            SELECT 1 AS Success;" +
                 "            LEAVE this_proc;" +
                 "          END;" +
                 "        END IF;" +
                 "      END;" +
                 "    END IF;" +
                 "    ROLLBACK;" +
+                "    SELECT 0 AS Success;" +
                 "  END;"
             ];
     res.query_results = [];
@@ -148,14 +150,14 @@ app.get("/stats", function (req, res) {
 });
 
 app.get("/serverAggregates", function (req, res) {
-    c.query("SELECT SUM(Balance) AS Total FROM Account")
+    c.query("SELECT AVG(Balance) AS BalanceAverage FROM Account")
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
         dbres.on('row', function(row) {
-            res.send('AccountBalanceTotal=' + row.Total);
+            res.send('AccountBalanceTotal=' + row.BalanceAverage);
         })
     })
 });
@@ -166,6 +168,8 @@ app.post("/customers/:id", function (req, res) {
     for (n in req.body.Accounts) {
         if (typeof req.body.Accounts[n].AccountType == 'undefined')
             req.body.Accounts[n].AccountType = 0;
+        if (typeof req.body.Accounts[n].Balance == 'undefined')
+            req.body.Accounts[n].Balance = 1000;
         res.query_list.push(
                     "INSERT INTO Account VALUES (" +
                     req.body.Accounts[n].AccountId + ", " +
@@ -252,25 +256,75 @@ app.get("/customers", function (req, res) {
     })
 });
 
+var pq_balance = c.prepare('SELECT Balance FROM Account WHERE AccountId=?');
 var pq_transfer = c.prepare('CALL AccountBalanceTransfer(?, ?, ?)');
-
 app.get("/transfer", function (req, res) {
-    // c.query("CALL AccountBalanceTransfer(?, ?, ?)", [req.query.f, req.query.t, req.query.x], true)
-    c.query(pq_transfer([parseInt(req.query.f), parseInt(req.query.t), parseInt(req.query.x)]), true)
+    req.query.f = parseInt(req.query.f)
+    req.query.t = parseInt(req.query.t)
+    req.query.x = parseInt(req.query.x)
+    if (req.query.x <= 0) {
+        res.status(400).send('Amount to transfer must be positive.');
+        return;
+    }
+    if (req.query.f === req.query.t) {
+        res.status(200).send('Giving money to yourself is redundant.');
+        return;
+    }
+
+    c.query(pq_balance([req.query.f]))
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
+        res.status(400);
+        res.transfer_message = 'Source account does not exist';
         dbres
+        .on('row', function(row) {
+            res.transfer_message = '';
+            if (row.Balance >= req.query.x) {
+                c.query(pq_transfer([req.query.f, req.query.t, req.query.x]))
+                .on('error', function(err) {
+                    console.log(err);
+                    res.status(500);
+                    res.transfer_message = err.message;
+                })
+                .on('result', function(dbres) {
+                    dbres
+                    .on('row', function(row) {
+                        if (row.Success === '1') {
+                            res.status(200);
+                            res.transfer_message = 'Transfer OK';
+                        } else {
+                            res.status(400);
+                            res.transfer_message = 'Transfer failed';
+                        }
+                    })
+                    .on('error', function(err) {
+                        console.log(err);
+                        res.status(500);
+                        res.transfer_message = err.message;
+                    })
+                })
+                .on('end', function(info) {
+                    if (!res.headersSent && res.transfer_message)
+                        res.send(res.transfer_message);
+                })
+            } else {
+                res.transfer_message = 'Insufficient funds on source account';
+            }
+        })
         .on('error', function(err) {
             console.log(err);
             res.status(500).send(err.message);
         })
+        .on('end', function(info) {
+            if (!res.headersSent && res.transfer_message)
+                res.send(res.transfer_message);
+        })
     })
-    .on('end', function(info) {
-        res.sendStatus(200);
-    })
+
+
 });
 
 app.get('/quit', function (req, res) {
