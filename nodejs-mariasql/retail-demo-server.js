@@ -266,17 +266,19 @@ app.get("/transfer", function (req, res) {
     req.query.t = parseInt(req.query.t)
     req.query.x = parseInt(req.query.x)
     if (req.query.x <= 0) {
-        res.status(400).send('Amount to transfer must be positive.');
+        if (!res.headersSent)
+            res.status(400).send('Amount to transfer must be positive.');
         return;
     }
     if (req.query.f === req.query.t) {
-        res.status(200).send('Giving money to yourself is redundant.');
+        if (!res.headersSent)
+            res.status(200).send('Giving money to yourself is redundant.');
         return;
     }
 
     c.query(pq_balance([req.query.f]))
     .on('error', function(err) {
-        console.log(err);
+        console.log('pq_balance: ' + err.message);
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
@@ -288,7 +290,7 @@ app.get("/transfer", function (req, res) {
             if (row.Balance >= req.query.x) {
                 c.query(pq_transfer([req.query.f, req.query.t, req.query.x]))
                 .on('error', function(err) {
-                    console.log(err);
+                    console.log('pq_transfer: ' + err.message);
                     res.status(500);
                     res.transfer_message = err.message;
                 })
@@ -304,7 +306,7 @@ app.get("/transfer", function (req, res) {
                         }
                     })
                     .on('error', function(err) {
-                        console.log(err);
+                        console.log('pq_transfer:result: ' + err.message);
                         res.status(500);
                         res.transfer_message = err.message;
                     })
@@ -318,7 +320,7 @@ app.get("/transfer", function (req, res) {
             }
         })
         .on('error', function(err) {
-            console.log(err);
+            console.log('pq_balance:result:error: ' + err.message);
             res.status(500).send(err.message);
         })
         .on('end', function(info) {
