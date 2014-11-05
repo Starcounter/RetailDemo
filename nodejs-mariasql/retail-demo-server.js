@@ -59,16 +59,19 @@ function process_query_list(res, next_query) {
         }
     }
 }
+//"DELETE FROM Account",
+//"DELETE FROM Customer",
+//"DELETE FROM ClientStats",
 
 app.get('/init', function (req, res) {
     res.query_list =
             [
+                "DROP TABLE IF EXISTS ClientStats",
+                "DROP TABLE IF EXISTS Account",
+                "DROP TABLE IF EXISTS Customer",
                 "CREATE TABLE IF NOT EXISTS Customer (CustomerId INT PRIMARY KEY, FullName VARCHAR(32) NOT NULL, INDEX FullNameIndex (FullName))",
                 "CREATE TABLE IF NOT EXISTS Account (AccountId INT PRIMARY KEY, AccountType INT DEFAULT 0, Balance INT DEFAULT 0, CustomerId INT NOT NULL, FOREIGN KEY (CustomerId) REFERENCES Customer(CustomerId) ON DELETE CASCADE)",
                 "CREATE TABLE IF NOT EXISTS ClientStats (Received DATETIME, ClientIp VARCHAR(32), NumFails INT, NumOk INT, INDEX ReceivedIndex (Received))",
-                "DELETE FROM Account",
-                "DELETE FROM Customer",
-                "DELETE FROM ClientStats",
                 "DROP PROCEDURE IF EXISTS AccountBalanceTransfer",
                 "CREATE PROCEDURE AccountBalanceTransfer (fromId INT, toId INT, amount INT) NOT DETERMINISTIC MODIFIES SQL DATA SQL SECURITY DEFINER" +
                 "  this_proc:BEGIN" +
