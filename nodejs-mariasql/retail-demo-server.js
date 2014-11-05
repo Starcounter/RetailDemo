@@ -1,9 +1,12 @@
 // https://www.npmjs.org/package/mariasql
 // https://github.com/strongloop/express
 
+// npm install express body-parser mariasql --save
+
 var listen_port = '3000';
 var db_config = {
-    host: '127.0.0.1',
+    unixSocket: '/var/run/mysqld/mysqld.sock',
+    // host: '127.0.0.1',
     user: 'retail',
     password: 'xyzzy',
     db: 'retail',
@@ -62,7 +65,7 @@ app.get('/init', function (req, res) {
             [
                 "CREATE TABLE IF NOT EXISTS Customer (CustomerId INT PRIMARY KEY, FullName VARCHAR(32) NOT NULL, INDEX FullNameIndex (FullName))",
                 "CREATE TABLE IF NOT EXISTS Account (AccountId INT PRIMARY KEY, AccountType INT DEFAULT 0, Balance INT DEFAULT 0, CustomerId INT NOT NULL, FOREIGN KEY (CustomerId) REFERENCES Customer(CustomerId) ON DELETE CASCADE)",
-                "CREATE TABLE IF NOT EXISTS ClientStats (Received TIMESTAMP, ClientIp VARCHAR(32), NumFails INT, NumOk INT)",
+                "CREATE TABLE IF NOT EXISTS ClientStats (Received DATETIME, ClientIp VARCHAR(32), NumFails INT, NumOk INT, INDEX ReceivedIndex (Received))",
                 "DELETE FROM Account",
                 "DELETE FROM Customer",
                 "DELETE FROM ClientStats",
@@ -92,7 +95,7 @@ app.get('/init', function (req, res) {
 
 // /addstats?numFail=X&numOk=Y
 app.get("/addstats", function (req, res) {
-    c.query("INSERT INTO ClientStats VALUES (NOW(), ?, ?, ?)", [req.ip, req.query.numFail, req.query.numOk], true)
+    c.query("INSERT INTO ClientStats VALUES (NOW(), ?, ?, ?)", [req.ip, parseInt(req.query.numFail), parseInt(req.query.numOk)], true)
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -179,7 +182,7 @@ var pq_customers_id = c.prepare('SELECT * FROM Customer WHERE CustomerId = ?');
 
 app.get("/customers/:id", function (req, res) {
     // c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
-    c.query(pq_customers_id([req.params.id]))
+    c.query(pq_customers_id([parseInt(req.params.id)]))
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -199,7 +202,7 @@ var pq_dashboard = c.prepare('SELECT * FROM Customer WHERE CustomerId = ?');
 
 app.get("/dashboard/:id", function (req, res) {
     // c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
-    c.query(pq_dashboard([req.params.id]))
+    c.query(pq_dashboard([parseInt(req.params.id)]))
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -253,7 +256,7 @@ var pq_transfer = c.prepare('CALL AccountBalanceTransfer(?, ?, ?)');
 
 app.get("/transfer", function (req, res) {
     // c.query("CALL AccountBalanceTransfer(?, ?, ?)", [req.query.f, req.query.t, req.query.x], true)
-    c.query(pq_transfer([req.query.f, req.query.t, req.query.x]), true)
+    c.query(pq_transfer([parseInt(req.query.f), parseInt(req.query.t), parseInt(req.query.x)]), true)
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -294,7 +297,10 @@ if (!module.parent) {
     for (n in args) {
         listen_port = args[n];
     }
-    console.log('Using database config "' + db_config.user + '@' + db_config.host + '"');
+    if (db_config.unixSocket)
+        console.log('Using database config "' + db_config.user + ' @ unix:' + db_config.unixSocket + '"');
+    else
+        console.log('Using database config "' + db_config.user + ' @ tcp:' + db_config.host + '"');
     c.connect(db_config);
     c.on('connect', function() {
         console.log('Starting application on port ' + listen_port);
