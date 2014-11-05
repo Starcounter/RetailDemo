@@ -1,9 +1,12 @@
 // https://www.npmjs.org/package/mariasql
 // https://github.com/strongloop/express
 
+// npm install express body-parser mariasql --save
+
 var listen_port = '3000';
 var db_config = {
-    host: '127.0.0.1',
+    unixSocket: '/var/run/mysqld/mysqld.sock',
+    // host: '127.0.0.1',
     user: 'retail',
     password: 'xyzzy',
     db: 'retail',
@@ -56,33 +59,38 @@ function process_query_list(res, next_query) {
         }
     }
 }
+//"DELETE FROM Account",
+//"DELETE FROM Customer",
+//"DELETE FROM ClientStats",
 
 app.get('/init', function (req, res) {
     res.query_list =
             [
+                "DROP TABLE IF EXISTS ClientStats",
+                "DROP TABLE IF EXISTS Account",
+                "DROP TABLE IF EXISTS Customer",
                 "CREATE TABLE IF NOT EXISTS Customer (CustomerId INT PRIMARY KEY, FullName VARCHAR(32) NOT NULL, INDEX FullNameIndex (FullName))",
                 "CREATE TABLE IF NOT EXISTS Account (AccountId INT PRIMARY KEY, AccountType INT DEFAULT 0, Balance INT DEFAULT 0, CustomerId INT NOT NULL, FOREIGN KEY (CustomerId) REFERENCES Customer(CustomerId) ON DELETE CASCADE)",
-                "CREATE TABLE IF NOT EXISTS ClientStats (Received TIMESTAMP, ClientIp VARCHAR(32), NumFails INT, NumOk INT)",
-                "DELETE FROM Account",
-                "DELETE FROM Customer",
-                "DELETE FROM ClientStats",
+                "CREATE TABLE IF NOT EXISTS ClientStats (Received DATETIME, ClientIp VARCHAR(32), NumFails INT, NumOk INT, INDEX ReceivedIndex (Received))",
                 "DROP PROCEDURE IF EXISTS AccountBalanceTransfer",
                 "CREATE PROCEDURE AccountBalanceTransfer (fromId INT, toId INT, amount INT) NOT DETERMINISTIC MODIFIES SQL DATA SQL SECURITY DEFINER" +
                 "  this_proc:BEGIN" +
                 "    START TRANSACTION;" +
-                "    UPDATE Account SET Balance = Balance - amount WHERE AccountId = fromId;" +
+                "    UPDATE Account SET Balance = Balance - amount WHERE AccountId = fromId AND Balance >= amount;" +
                 "    IF ROW_COUNT() = 1 THEN" +
                 "      BEGIN" +
                 "        UPDATE Account SET Balance = Balance + amount WHERE AccountId = toId;" +
                 "        IF ROW_COUNT() = 1 THEN" +
                 "          BEGIN" +
                 "            COMMIT;" +
+                "            SELECT 1 AS Success;" +
                 "            LEAVE this_proc;" +
                 "          END;" +
                 "        END IF;" +
                 "      END;" +
                 "    END IF;" +
                 "    ROLLBACK;" +
+                "    SELECT 0 AS Success;" +
                 "  END;"
             ];
     res.query_results = [];
@@ -92,7 +100,7 @@ app.get('/init', function (req, res) {
 
 // /addstats?numFail=X&numOk=Y
 app.get("/addstats", function (req, res) {
-    c.query("INSERT INTO ClientStats VALUES (NOW(), ?, ?, ?)", [req.ip, req.query.numFail, req.query.numOk], true)
+    c.query("INSERT INTO ClientStats VALUES (NOW(), ?, ?, ?)", [req.ip, parseInt(req.query.numFail), parseInt(req.query.numOk)], true)
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -145,14 +153,14 @@ app.get("/stats", function (req, res) {
 });
 
 app.get("/serverAggregates", function (req, res) {
-    c.query("SELECT SUM(Balance) AS Total FROM Account")
+    c.query("SELECT AVG(Balance) AS BalanceAverage FROM Account")
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
         dbres.on('row', function(row) {
-            res.send('AccountBalanceTotal=' + row.Total);
+            res.send('AccountBalanceTotal=' + row.BalanceAverage);
         })
     })
 });
@@ -163,6 +171,8 @@ app.post("/customers/:id", function (req, res) {
     for (n in req.body.Accounts) {
         if (typeof req.body.Accounts[n].AccountType == 'undefined')
             req.body.Accounts[n].AccountType = 0;
+        if (typeof req.body.Accounts[n].Balance == 'undefined')
+            req.body.Accounts[n].Balance = 1000;
         res.query_list.push(
                     "INSERT INTO Account VALUES (" +
                     req.body.Accounts[n].AccountId + ", " +
@@ -179,7 +189,7 @@ var pq_customers_id = c.prepare('SELECT * FROM Customer WHERE CustomerId = ?');
 
 app.get("/customers/:id", function (req, res) {
     // c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
-    c.query(pq_customers_id([req.params.id]))
+    c.query(pq_customers_id([parseInt(req.params.id)]))
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -199,7 +209,7 @@ var pq_dashboard = c.prepare('SELECT * FROM Customer WHERE CustomerId = ?');
 
 app.get("/dashboard/:id", function (req, res) {
     // c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
-    c.query(pq_dashboard([req.params.id]))
+    c.query(pq_dashboard([parseInt(req.params.id)]))
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -249,25 +259,77 @@ app.get("/customers", function (req, res) {
     })
 });
 
+var pq_balance = c.prepare('SELECT Balance FROM Account WHERE AccountId=?');
 var pq_transfer = c.prepare('CALL AccountBalanceTransfer(?, ?, ?)');
-
 app.get("/transfer", function (req, res) {
-    // c.query("CALL AccountBalanceTransfer(?, ?, ?)", [req.query.f, req.query.t, req.query.x], true)
-    c.query(pq_transfer([req.query.f, req.query.t, req.query.x]), true)
+    req.query.f = parseInt(req.query.f)
+    req.query.t = parseInt(req.query.t)
+    req.query.x = parseInt(req.query.x)
+    if (req.query.x <= 0) {
+        if (!res.headersSent)
+            res.status(400).send('Amount to transfer must be positive.');
+        return;
+    }
+    if (req.query.f === req.query.t) {
+        if (!res.headersSent)
+            res.status(200).send('Giving money to yourself is redundant.');
+        return;
+    }
+
+    c.query(pq_balance([req.query.f]))
     .on('error', function(err) {
-        console.log(err);
+        console.log('pq_balance: ' + err.message);
         res.status(500).send(err.message);
     })
     .on('result', function(dbres) {
+        res.status(400);
+        res.transfer_message = 'Source account does not exist';
         dbres
+        .on('row', function(row) {
+            res.transfer_message = '';
+            if (row.Balance >= req.query.x) {
+                c.query(pq_transfer([req.query.f, req.query.t, req.query.x]))
+                .on('error', function(err) {
+                    console.log('pq_transfer: ' + err.message);
+                    res.status(500);
+                    res.transfer_message = err.message;
+                })
+                .on('result', function(dbres) {
+                    dbres
+                    .on('row', function(row) {
+                        if (row.Success === '1') {
+                            res.status(200);
+                            res.transfer_message = 'Transfer OK';
+                        } else {
+                            res.status(400);
+                            res.transfer_message = 'Transfer failed';
+                        }
+                    })
+                    .on('error', function(err) {
+                        console.log('pq_transfer:result: ' + err.message);
+                        res.status(500);
+                        res.transfer_message = err.message;
+                    })
+                })
+                .on('end', function(info) {
+                    if (!res.headersSent && res.transfer_message)
+                        res.send(res.transfer_message);
+                })
+            } else {
+                res.transfer_message = 'Insufficient funds on source account';
+            }
+        })
         .on('error', function(err) {
-            console.log(err);
+            console.log('pq_balance:result:error: ' + err.message);
             res.status(500).send(err.message);
         })
+        .on('end', function(info) {
+            if (!res.headersSent && res.transfer_message)
+                res.send(res.transfer_message);
+        })
     })
-    .on('end', function(info) {
-        res.sendStatus(200);
-    })
+
+
 });
 
 app.get('/quit', function (req, res) {
@@ -294,7 +356,10 @@ if (!module.parent) {
     for (n in args) {
         listen_port = args[n];
     }
-    console.log('Using database config "' + db_config.user + '@' + db_config.host + '"');
+    if (db_config.unixSocket)
+        console.log('Using database config "' + db_config.user + ' @ unix:' + db_config.unixSocket + '"');
+    else
+        console.log('Using database config "' + db_config.user + ' @ tcp:' + db_config.host + '"');
     c.connect(db_config);
     c.on('connect', function() {
         console.log('Starting application on port ' + listen_port);
