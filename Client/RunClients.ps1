@@ -35,7 +35,8 @@ Foreach($ClientIp in $ClientIps) {
 	
 	Write-Host "Starting jobs on client " $ClientIp "..."
 
-	Invoke-Command -AsJob -session $Session -scriptblock {
+	# NOTE! Uncomment "-AsJob" so the task will run asynchronously on every client.
+	Invoke-Command <#-AsJob#> -session $Session -scriptblock {
 	
 		$ServerIps = "10.0.0.11;10.0.0.12;10.0.0.13;10.0.0.14;10.0.0.15"
 		$ServerPorts = "3000;3001;3002;3003;3004;3005;3006;3007"
@@ -43,7 +44,9 @@ Foreach($ClientIp in $ClientIps) {
 		#$ServerPorts = "8080"
 		
 		Write-Host "Client <=> server ${ServerIps} and ${ServerPorts}..."
-		Invoke-Expression "c:\Users\Administrator\Downloads\RetailDemo\RetailClient.exe --% -ServerIps=${ServerIps} -ServerPorts=${ServerPorts} -NumCustomers=10000 -DoAsyncNode=False -NumTransferMoneyBetweenTwoAccounts=10000000 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=0 -NumGetCustomerByFullName=0"
+		
+		# Change the retail client parameters here:
+		Invoke-Expression "c:\Users\Administrator\Downloads\RetailDemo\RetailClient.exe --% -ServerIps=${ServerIps} -ServerPorts=${ServerPorts} -NumCustomers=10000 -DoAsyncNode=False -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=10000000 -NumGetCustomerByFullName=0"
 		#Start-Process "c:\Users\Administrator\Downloads\RetailDemo\RetailClient.exe" "-ServerIps=${ServerIps} -ServerPorts=${ServerPorts} -NumCustomers=10000 -DoAsyncNode=False -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=10000000 -NumGetCustomerByFullName=0"
 	}
 	
