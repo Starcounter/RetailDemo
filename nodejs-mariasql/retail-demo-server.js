@@ -70,7 +70,7 @@ app.get('/init', function (req, res) {
                 "DROP TABLE IF EXISTS Customer",
                 "CREATE TABLE IF NOT EXISTS Customer (CustomerId INT PRIMARY KEY, FullName VARCHAR(32) NOT NULL, INDEX FullNameIndex (FullName))",
                 "CREATE TABLE IF NOT EXISTS Account (AccountId INT PRIMARY KEY, AccountType INT DEFAULT 0, Balance INT DEFAULT 0, CustomerId INT NOT NULL, FOREIGN KEY (CustomerId) REFERENCES Customer(CustomerId) ON DELETE CASCADE)",
-                "CREATE TABLE IF NOT EXISTS ClientStats (Received DATETIME, ClientIp VARCHAR(32), NumFails INT, NumOk INT, PRIMARY KEY (Received, ClientIp))",
+                "CREATE TABLE IF NOT EXISTS ClientStats (Received TIMESTAMP, ClientIp VARCHAR(32), NumFails INT, NumOk INT, PRIMARY KEY (Received, ClientIp))",
                 "DROP PROCEDURE IF EXISTS AccountBalanceTransfer",
                 "CREATE PROCEDURE AccountBalanceTransfer (fromId INT, toId INT, amount INT) NOT DETERMINISTIC MODIFIES SQL DATA SQL SECURITY DEFINER" +
                 "  this_proc:BEGIN" +
@@ -299,10 +299,10 @@ app.get("/transfer", function (req, res) {
                     .on('row', function(row) {
                         if (row.Success === '1') {
                             res.status(200);
-                            res.transfer_message = 'Transfer OK';
+                            res.transfer_message = 'Transfer approved';
                         } else {
-                            res.status(400);
-                            res.transfer_message = 'Transfer failed';
+                            res.status(200);
+                            res.transfer_message = 'Transfer denied';
                         }
                     })
                     .on('error', function(err) {
@@ -316,6 +316,7 @@ app.get("/transfer", function (req, res) {
                         res.send(res.transfer_message);
                 })
             } else {
+                res.status(200);
                 res.transfer_message = 'Insufficient funds on source account';
             }
         })
@@ -351,6 +352,15 @@ app.get('/', function (req, res) {
 ')
 })
 
+
+function connect_to_db() {
+    c.connect(db_config);
+    c.on('error', function(err) {
+        console.log('Database connection failed: ' + err.message);
+        setTimeout(connect_to_db, 1000);
+    })
+}
+
 if (!module.parent) {
     var args = process.argv.slice(2);
     for (n in args) {
@@ -360,22 +370,7 @@ if (!module.parent) {
         console.log('Using database config "' + db_config.user + ' @ unix:' + db_config.unixSocket + '"');
     else
         console.log('Using database config "' + db_config.user + ' @ tcp:' + db_config.host + '"');
-    c.connect(db_config);
-    c.on('connect', function() {
-        console.log('Starting application on port ' + listen_port);
-        app.listen(listen_port);
-    })
-    .on('error', function(err) {
-        console.log('Connection error: ' + err.message);
-        process.exit(err.errno);
-    })
-    .on('close', function(hadError) {
-        if (hadError) {
-            console.log('Exiting due to error: ' + hadError,message);
-            process.exit(hadError.errno);
-        } else {
-            console.log('Exiting.');
-            process.exit(0);
-        }
-    });
+    console.log('Starting application on port ' + listen_port);
+    app.listen(listen_port);
+    connect_to_db();
 }
