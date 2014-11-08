@@ -1579,8 +1579,13 @@ SEND_DATA:
                             // Calculating worker RPS.
                             Int32 approxWorkersRPS = (Int32)((workerSettings[i].NumTotalOkResponses + workerSettings[i].NumTotalFailResponses) * 1000.0 / timer.ElapsedMilliseconds);
 
-                            Console.WriteLine(String.Format("[{0}] total num OK resps: {1} ({2} failed) with approx RPS {3}.",
-                                i, workerSettings[i].NumTotalOkResponses, workerSettings[i].NumTotalFailResponses, approxWorkersRPS));
+                            Console.WriteLine(String.Format("[{0}] for {1}:{2} total OK resps: {3} ({4} failed) RPS {5}.",
+                                i,
+                                workerSettings[i].ServerIp, 
+                                workerSettings[i].ServerPort,
+                                workerSettings[i].NumTotalOkResponses,
+                                workerSettings[i].NumTotalFailResponses,
+                                approxWorkersRPS));
                         }
                     }
 
