@@ -7,7 +7,6 @@ param(
 $Password = convertto-securestring -asplaintext -force -string "n?aojnC3E9D"
 $Credential = new-object -typename system.management.automation.pscredential -argumentlist "Administrator", $Password
 $ClientIps = "10.0.0.82", "10.0.0.87", "10.0.0.88", "10.0.0.89", "10.0.0.90"
-$ServerIps = "10.0.0.11", "10.0.0.12", "10.0.0.13", "10.0.0.14", "10.0.0.15"
 $Sessions = @()
 
 # Killing all existing processes.
@@ -27,43 +26,28 @@ Foreach ($ClientIp in $ClientIps) {
 
 if ($kill) { Exit }
 
-# Processing each server.
-Foreach ($ServerIp in $ServerIps) {
+# Processing each client.
+Foreach($ClientIp in $ClientIps) {
 
-	# Processing each client.
-	Foreach($ClientIp in $ClientIps) {
+	# Creating new session for each client.
+	$Session = new-pssession -computername $ClientIp -credential $Credential
+	$Sessions += $Session
+	
+	Write-Host "Starting jobs on client " $ClientIp "..."
 
-		# Creating new session for each client.
-		$Session = new-pssession -computername $ClientIp -credential $Credential
-		$Sessions += $Session
+	Invoke-Command -AsJob -session $Session -scriptblock {
+	
+		$ServerIps = "10.0.0.11;10.0.0.12;10.0.0.13;10.0.0.14;10.0.0.15"
+		$ServerPorts = "3000;3001;3002;3003;3004;3005;3006;3007"
+		#$ServerIps = "10.0.0.85"
+		#$ServerPorts = "8080"
 		
-		Write-Host "Starting jobs on client " $ClientIp "..."
-
-		invoke-command -session $Session -scriptblock {
-		
-			$ServerIp = $Args[0]
-			
-			#Start-Job -ScriptBlock {
-			
-				$ServerIp = $Args[0]
-				$ServerPorts = "3000", "3001", "3002", "3003", "3004", "3005", "3006", "3007"
-				#$ServerIps = "10.0.0.55"
-				#$ServerPorts = "8080"
-				
-				# Starting retail demo on each port.
-				Foreach ($ServerPort in $ServerPorts) {
-			
-					Write-Host "Client <=> server ${ServerIp}:${ServerPort}..."
-					
-					Start-Process "c:\Users\Administrator\Downloads\RetailDemo\RetailClient.exe" "-NumWorkers=1 -ServerIp=${ServerIp} -ServerPort=${ServerPort}"
-				}
-				
-			#} -Args $ServerIp
-			
-		} -Args $ServerIp
-		
-		Start-Sleep -m 100
+		Write-Host "Client <=> server ${ServerIps} and ${ServerPorts}..."
+		Invoke-Expression "c:\Users\Administrator\Downloads\RetailDemo\RetailClient.exe --% -ServerIps=${ServerIps} -ServerPorts=${ServerPorts} -NumCustomers=10000 -DoAsyncNode=False -NumTransferMoneyBetweenTwoAccounts=10000000 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=0 -NumGetCustomerByFullName=0"
+		#Start-Process "c:\Users\Administrator\Downloads\RetailDemo\RetailClient.exe" "-ServerIps=${ServerIps} -ServerPorts=${ServerPorts} -NumCustomers=10000 -DoAsyncNode=False -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=10000000 -NumGetCustomerByFullName=0"
 	}
+	
+	Start-Sleep -m 100
 }
 
 Start-Sleep -s 1000

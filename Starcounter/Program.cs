@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Starcounter;
+using Starcounter.Internal;
 
 namespace ScRetailDemo {
 
@@ -59,19 +60,19 @@ namespace ScRetailDemo {
             Handle.GET("/customers/{?}", (int customerId) => {
                 var json = new CustomerJson();
                 json.Data = Db.SQL("SELECT p FROM Customer p WHERE CustomerId = ?", customerId).First;
-                return new Response() { BodyBytes = json.ToJsonUtf8() };
+                return json.ToJsonUtf8();
             });
 
             Handle.GET("/dashboard/{?}", (int customerId) => {
                 var json = new CustomerAndAccountsJson();
                 json.Data = Db.SQL("SELECT p FROM Customer p WHERE CustomerId = ?", customerId).First;
-                return new Response() { BodyBytes = json.ToJsonUtf8() };
+                return json.ToJsonUtf8();
             });
 
             Handle.GET("/customers?f={?}", (string fullName) => {
                 var json = new CustomerJson();
                 json.Data = Db.SQL("SELECT p FROM Customer p WHERE FullName = ?", fullName).First;
-                return new Response() { BodyBytes = json.ToJsonUtf8() };
+                return json.ToJsonUtf8();
             });
 
             Handle.POST("/customers/{?}", (int customerId, CustomerAndAccountsJson json) => {
@@ -104,8 +105,14 @@ namespace ScRetailDemo {
 
         private static void CreateIndexes() {
 
-            if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountIdIndex").First == null)
+            if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountIdIndex").First == null) {
+
                 Db.SQL("CREATE UNIQUE INDEX AccountIdIndex ON Account (AccountId asc)");
+            }
+
+            if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "Account").First != null) {
+                Db.SQL("DROP INDEX Auto ON Account");
+            }
 
             if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "CustomerIdIndex").First == null)
                 Db.SQL("CREATE UNIQUE INDEX CustomerIdIndex ON Customer (CustomerId asc)");
@@ -115,6 +122,10 @@ namespace ScRetailDemo {
 
             if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "CustomerIndex").First == null)
                 Db.SQL("CREATE INDEX CustomerIndex ON Account (Customer, AccountId asc)");
+
+            if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "Customer").First != null) {
+                Db.SQL("DROP INDEX Auto ON Customer");
+            }
         }
     }
 

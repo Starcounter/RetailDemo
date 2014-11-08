@@ -20,11 +20,11 @@ namespace PokerDemoConsole {
         public const String Separator = "----------------------------------";
         public const Int32 MaxAccountsPerCustomer = 5;
         public const Int32 MinInitialBalance = 0;
-        public const Int32 MaxInitialBalance = 0;
+        public const Int32 MaxInitialBalance = 100000;
         public const Int32 MaxTransferAmount = 1000;
         public const Int32 SendStatsNumSeconds = 10;
         
-        public Int32 NumCustomers = 10000;
+        readonly public Int32 NumCustomers = 10000;
 
 //         public Int32 NumTransferMoneyBetweenTwoAccounts = 0;
 //         public Int32 NumGetCustomerAndAccounts = 0;
@@ -32,29 +32,28 @@ namespace PokerDemoConsole {
 //         public Int32 NumGetCustomerByFullName = 0;
 //         public Boolean Inserting = true;
 
+        readonly public Int32 NumTransferMoneyBetweenTwoAccounts = 1000000;
+        readonly public Int32 NumGetCustomerAndAccounts = 1000000;
+        readonly public Int32 NumGetCustomerById = 1000000;
+        readonly public Int32 NumGetCustomerByFullName = 1000000;
+        readonly public Boolean Inserting = false;
 
-        public Int32 NumTransferMoneyBetweenTwoAccounts = 1000000;
-        public Int32 NumGetCustomerAndAccounts = 1000000;
-        public Int32 NumGetCustomerById = 1000000;
-        public Int32 NumGetCustomerByFullName = 1000000;
-        public Boolean Inserting = false;
+//         readonly public String ServerIps = new String[] { "192.168.60.186" };
+//         readonly public UInt16 ServerPorts = new UInt16[] { 3000 };
+//         readonly public Boolean UseAggregation = false;
 
+        readonly public Boolean DoAsyncNode = true;
+        readonly public Int32 NumWorkersTotal = 1;
+        readonly public Int32 NumWorkersPerServerEndpoint = 1;
 
-//         public String ServerIp = "192.168.60.186";
-//         public UInt16 ServerPort = 3000;
-//         public Boolean UseAggregation = false;
+        readonly public Boolean SendStatistics = true;
+        readonly public String[] ServerIps = new String[] { "127.0.0.1" };
+        readonly public UInt16[] ServerPorts = new UInt16[] { 8080 };
+        readonly public Boolean UseAggregation = false;
 
-        public Boolean DoAsyncNode = true;
-        public Int32 NumWorkers = 1;
-
-        public Boolean SendStatistics = true;
-        public String ServerIp = "127.0.0.1";
-        public UInt16 ServerPort = 8080;
-        public Boolean UseAggregation = false;
-
-        public UInt16 AggregationPort = 9191;
-        public TestTypes TestType = TestTypes.PokerDemo;
-        public Int32 NumTestRequestsEachWorker = 5000000;
+        readonly public UInt16 AggregationPort = 9191;
+        readonly public TestTypes TestType = TestTypes.PokerDemo;
+        readonly public Int32 NumTestRequestsEachWorker = 5000000;
 
         /// <summary>
         /// This local IP address.
@@ -86,7 +85,7 @@ namespace PokerDemoConsole {
             }
         }
 
-        public void Init(string[] args)
+        public Settings(string[] args)
         {
             if (args.Length == 1) {
 
@@ -103,9 +102,9 @@ namespace PokerDemoConsole {
                     Console.WriteLine("-NumGetCustomerById=[0, 10000000]");
                     Console.WriteLine("-NumGetCustomerByFullName=[0, 10000000]");
 
-                    Console.WriteLine("-NumWorkers=1");
-                    Console.WriteLine("-ServerIp=127.0.0.1");
-                    Console.WriteLine("-ServerPort=8080");
+                    Console.WriteLine("-NumWorkersPerServerEndpoint=1");
+                    Console.WriteLine("-ServerIps=127.0.0.1;127.0.0.2");
+                    Console.WriteLine("-ServerPorts=8080;8081");
                     Console.WriteLine("-AggregationPort=9191");
                     Console.WriteLine("-UseAggregation=True");
                     Console.WriteLine("-DoAsyncNode=True");
@@ -136,14 +135,18 @@ namespace PokerDemoConsole {
                 } else if (arg.StartsWith("-NumGetCustomerByFullName=")) {
                     NumGetCustomerByFullName = Int32.Parse(arg.Substring("-NumGetCustomerByFullName=".Length));
 
-                } else if (arg.StartsWith("-NumWorkers=")) {
-                    NumWorkers = Int32.Parse(arg.Substring("-NumWorkers=".Length));
+                } else if (arg.StartsWith("-NumWorkersPerServerEndpoint=")) {
+                    NumWorkersPerServerEndpoint = Int32.Parse(arg.Substring("-NumWorkersPerServerEndpoint=".Length));
 
-                } else if (arg.StartsWith("-ServerIp=")) {
-                    ServerIp = arg.Substring("-ServerIp=".Length);
+                } else if (arg.StartsWith("-ServerIps=")) {
+                    ServerIps = arg.Substring("-ServerIps=".Length).Split(new Char[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
 
-                } else if (arg.StartsWith("-ServerPort=")) {
-                    ServerPort = UInt16.Parse(arg.Substring("-ServerPort=".Length));
+                } else if (arg.StartsWith("-ServerPorts=")) {
+                    String[] serverPortsStrings = arg.Substring("-ServerPorts=".Length).Split(new Char[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                    ServerPorts = new UInt16[serverPortsStrings.Length];
+                    for (Int32 i = 0; i < ServerPorts.Length; i++) {
+                        ServerPorts[i] = UInt16.Parse(serverPortsStrings[i]);
+                    }
 
                 } else if (arg.StartsWith("-AggregationPort=")) {
                     AggregationPort = UInt16.Parse(arg.Substring("-AggregationPort=".Length));
@@ -170,6 +173,8 @@ namespace PokerDemoConsole {
                     throw new ArgumentException("Unrecognized argument supplied: " + arg);
                 }
             }
+            
+            NumWorkersTotal = ServerPorts.Length * ServerIps.Length * NumWorkersPerServerEndpoint;
 
             // Checking correctness of parameters.
             if ((NumCustomers < 0) ||
@@ -184,8 +189,8 @@ namespace PokerDemoConsole {
             // Checking if we are inserting new objects.
             if (Inserting) {
 
-                if (NumWorkers > 1) {
-                    throw new ArgumentException("Inserting but NumWorkers > 1");
+                if (NumWorkersPerServerEndpoint > 1) {
+                    throw new ArgumentException("Inserting but NumWorkersPerServerEndpoint > 1");
                 }
 
                 if (NumCustomers <= 0) {
@@ -201,9 +206,9 @@ namespace PokerDemoConsole {
                 }
             }
 
-            Console.WriteLine("NumWorkers: " + NumWorkers);
-            Console.WriteLine("ServerIp: " + ServerIp);
-            Console.WriteLine("ServerPort: " + ServerPort);
+            Console.WriteLine("NumWorkersPerServerEndpoint: " + NumWorkersPerServerEndpoint);
+            Console.WriteLine("ServerIps: " + ServerIps);
+            Console.WriteLine("ServerPorts: " + ServerPorts);
             Console.WriteLine("AggregationPort: " + AggregationPort);
             Console.WriteLine("UseAggregation: " + UseAggregation);
             Console.WriteLine("SendStatistics: " + SendStatistics);
@@ -318,6 +323,8 @@ namespace PokerDemoConsole {
         public Int32 NumTotalOkResponses;
         public Int32 WorkersRPS;
         public Int32 ExitCode;
+        public String ServerIp;
+        public UInt16 ServerPort;
 
         public void SafeIncrementNumTotalFailResponses() {
             Interlocked.Add(ref NumTotalFailResponses, 1);
@@ -427,16 +434,15 @@ namespace PokerDemoConsole {
         }
 
         /// <summary>
-        /// Checking responses on asynchronous node call.
+        /// Checking responses on node call.
         /// </summary>
-        static void CheckResponsesAsyncNode(Response resp, Object userObject) {
+        static void CheckResponsesForNode(Response resp, Object userObject) {
 
             WorkerSettings ws = (WorkerSettings) userObject;
 
             if (resp.IsSuccessStatusCode) {
                 ws.SafeIncrementNumTotalOkResponses();
             } else {
-                Console.WriteLine("FAIL " + resp.ToString());
                 ws.SafeIncrementNumTotalFailResponses();
             }
 
@@ -451,7 +457,9 @@ namespace PokerDemoConsole {
 
             try {
 
-                Node node = new Node(globalSettings_.ServerIp, globalSettings_.ServerPort, 0, false);
+                Console.WriteLine(String.Format("[{0}]: Starting worker for endpoint {1} : {2}...", workerId_, ws_.ServerIp, ws_.ServerPort));
+
+                Node node = new Node(ws_.ServerIp, ws_.ServerPort, 0, false);
 
                 Int32 totalNumSentRequests = 0;
                 
@@ -489,7 +497,7 @@ namespace PokerDemoConsole {
                                     reqData[i].DataLength);
 
                                 // Checking for correct responses.
-                                CheckResponsesAsyncNode(resp, ws_);
+                                CheckResponsesForNode(resp, ws_);
 
                             } else {
 
@@ -499,7 +507,7 @@ namespace PokerDemoConsole {
                                     null,
                                     null,
                                     null,
-                                    CheckResponsesAsyncNode,
+                                    CheckResponsesForNode,
                                     ws_,
                                     0,
                                     null,
@@ -526,7 +534,7 @@ namespace PokerDemoConsole {
                 // Calculating worker RPS.
                 ws_.WorkersRPS = (Int32) ((ws_.NumTotalOkResponses + ws_.NumTotalFailResponses) * 1000.0 / timer.ElapsedMilliseconds);
 
-                lock (ws_) {
+                lock (globalSettings_) {
 
                     Console.WriteLine(String.Format("[{0}]: Took time {1} ms for {2} requests (with {3} OK and {4} FAIL responses), meaning worker RPS {5}.",
                         workerId_,
@@ -576,10 +584,10 @@ namespace PokerDemoConsole {
                 aggrTcpClient.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.SendBuffer, 1 << 19);
                 aggrTcpClient.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReceiveBuffer, 1 << 19);
 
-                aggrTcpClient.Connect(globalSettings_.ServerIp, globalSettings_.AggregationPort);
+                aggrTcpClient.Connect(ws_.ServerIp, globalSettings_.AggregationPort);
 
                 AggregationStruct agsOrig = new AggregationStruct() {
-                    port_number_ = globalSettings_.ServerPort,
+                    port_number_ = ws_.ServerPort,
                     msg_type_ = (Byte) AggregationMessageTypes.AGGR_CREATE_SOCKET
                 };
 
@@ -601,7 +609,7 @@ namespace PokerDemoConsole {
                     agsOrig = *(AggregationStruct*)p;
                 }
 
-                if (agsOrig.port_number_ != globalSettings_.ServerPort) {
+                if (agsOrig.port_number_ != ws_.ServerPort) {
                     throw new ArgumentOutOfRangeException("Wrong aggregation port number received.");
                 }
 
@@ -785,7 +793,7 @@ SEND_DATA:
                 // Calculating worker RPS.
                 ws_.WorkersRPS = (Int32) ((ws_.NumTotalOkResponses + ws_.NumTotalFailResponses) * 1000.0 / timer.ElapsedMilliseconds);
 
-                lock (ws_) {
+                lock (globalSettings_) {
 
                     Console.WriteLine(String.Format("[{0}]: Took time {1} ms for {2} requests (with {3} OK and {4} FAIL responses), meaning worker RPS {5}.",
                         workerId_,
@@ -840,8 +848,8 @@ SEND_DATA:
                     }
 
                     AggregationStruct* ags = (AggregationStruct*)(p + offset);
-                    if (ags->port_number_ != globalSettings_.ServerPort)
-                        throw new ArgumentOutOfRangeException("ags->port_number_ != globalSettings_.ServerPort");
+                    if (ags->port_number_ != ws_.ServerPort)
+                        throw new ArgumentOutOfRangeException("ags->port_number_ != ws_.ServerPort");
 
                     if (numUnprocessedBytes < (AggregationStructSizeBytes + ags->size_bytes_)) {
 
@@ -953,8 +961,9 @@ SEND_DATA:
 
             settings_ = settings;
 
-            workerRandoms_ = new Random[settings.NumWorkers];
-            for (Int32 i = 0; i < settings.NumWorkers; i++) {
+            workerRandoms_ = new Random[settings.NumWorkersTotal];
+
+            for (Int32 i = 0; i < settings.NumWorkersTotal; i++) {
                 workerRandoms_[i] = new Random(BitConverter.ToInt32(Settings.LocalIPAddress.GetAddressBytes(), 0));
             }
 
@@ -973,7 +982,7 @@ SEND_DATA:
             }
 
             Console.WriteLine(Settings.Separator);
-            Console.WriteLine(String.Format("I'm going to perform {0} requests on {1} worker(s).", totalNumPlannedRequests_, settings_.NumWorkers));
+            Console.WriteLine(String.Format("I'm going to perform {0} requests on total {1} worker(s).", totalNumPlannedRequests_, settings_.NumWorkersTotal));
 
             randomRequestTypes_ = new Byte[totalNumPlannedRequests_];
 
@@ -1426,12 +1435,20 @@ SEND_DATA:
             try {
 
                 // Parsing command line settings.
-                Settings settings = new Settings();
-                settings.Init(args);
+                Settings settings = new Settings(args);
 
-                CountdownEvent waitForAllWorkersEvent = new CountdownEvent(settings.NumWorkers);
+                Console.WriteLine("Welcome to Retail Demo client! (run with ? for help)");
+                Console.WriteLine("Running for the following server endpoints:");
 
-                Node nodeClient = new Node(settings.ServerIp, settings.ServerPort);
+                foreach (String serverIp in settings.ServerIps) {
+                    foreach (UInt16 serverPort in settings.ServerPorts) {
+                        Console.WriteLine(serverIp + " : " + serverPort);
+                    }
+                }
+
+                CountdownEvent waitForAllWorkersEvent = new CountdownEvent(settings.NumWorkersTotal);
+
+                Node nodeClient = new Node(settings.ServerIps[0], settings.ServerPorts[0]);
                 Response nodeResp;
 
                 Stopwatch timer = new Stopwatch();
@@ -1462,7 +1479,7 @@ SEND_DATA:
 
                             rc = new LiveRequestCreator(settings);
                             //rc = new RequestsCreator(null, 0, 1, 1, 1, 1, 1, 1);
-                            //rc.SetTotalPlannedRequests(settings.NumTestRequestsEachWorker * settings.NumWorkers);
+                            //rc.SetTotalPlannedRequests(settings.NumTestRequestsEachWorker * settings.NumWorkersTotal);
 
                             break;
                         }
@@ -1477,18 +1494,30 @@ SEND_DATA:
                     irc = grc;
                 }
 
-                WorkerSettings[] workerSettings = new WorkerSettings[settings.NumWorkers];
-                for (Int32 i = 0; i < settings.NumWorkers; i++) {
+                WorkerSettings[] workerSettings = new WorkerSettings[settings.NumWorkersTotal];
+                Int32 n = 0;
 
-                    workerSettings[i] = new WorkerSettings() {
-                        Irc = irc,
-                        NumBodyCharacters = 8,
-                        WaitForAllWorkersEvent = waitForAllWorkersEvent,
-                        NumTotalOkResponses = 0,
-                        NumTotalFailResponses = 0,
-                        WorkersRPS = 0,
-                        ExitCode = 0
-                    };
+                for (Int32 i = 0; i < settings.NumWorkersPerServerEndpoint; i++) {
+
+                    foreach (String serverIp in settings.ServerIps) {
+
+                        foreach (UInt16 serverPort in settings.ServerPorts) {
+
+                            workerSettings[n] = new WorkerSettings() {
+                                Irc = irc,
+                                NumBodyCharacters = 8,
+                                WaitForAllWorkersEvent = waitForAllWorkersEvent,
+                                NumTotalOkResponses = 0,
+                                NumTotalFailResponses = 0,
+                                WorkersRPS = 0,
+                                ExitCode = 0,
+                                ServerIp = serverIp,
+                                ServerPort = serverPort
+                            };
+
+                            n++;
+                        }
+                    }
                 }
 
                 timer.Stop();
@@ -1519,7 +1548,9 @@ SEND_DATA:
                 // Doing REST call to send statistics to server.
                 ReportPerformanceStats(settings, workerSettings, nodeClient);
 
-                for (Int32 i = 0; i < settings.NumWorkers; i++) {
+                // Starting all workers.
+                for (Int32 i = 0; i < settings.NumWorkersTotal; i++) {
+
                     Int32 workerId = i;
                     Worker worker = new Worker(workerId, workerSettings[workerId], settings);
                     ThreadStart threadDelegate;
@@ -1535,7 +1566,7 @@ SEND_DATA:
                     newThread.Start();
                 }
 
-                Int32 maxWorkerTimeSeconds = 1000;
+                Int32 maxWorkerTimeSeconds = 10000;
                 Int32 numSecondsLastStat = Settings.SendStatsNumSeconds;
 
                 // Looping until worker finish events are set.
@@ -1543,7 +1574,7 @@ SEND_DATA:
 
                     lock (settings) {
 
-                        for (Int32 i = 0; i < settings.NumWorkers; i++) {
+                        for (Int32 i = 0; i < settings.NumWorkersTotal; i++) {
 
                             // Calculating worker RPS.
                             Int32 approxWorkersRPS = (Int32)((workerSettings[i].NumTotalOkResponses + workerSettings[i].NumTotalFailResponses) * 1000.0 / timer.ElapsedMilliseconds);
@@ -1575,14 +1606,14 @@ SEND_DATA:
                 timer.Stop();
 
                 // Checking if every worker succeeded.
-                for (Int32 i = 0; i < settings.NumWorkers; i++) {
+                for (Int32 i = 0; i < settings.NumWorkersTotal; i++) {
                     if (workerSettings[i].ExitCode != 0) {
                         return workerSettings[i].ExitCode;
                     }
                 }
 
                 Int32 totalRPS = 0;
-                for (Int32 i = 0; i < settings.NumWorkers; i++) {
+                for (Int32 i = 0; i < settings.NumWorkersTotal; i++) {
                     totalRPS += workerSettings[i].WorkersRPS;
                 }
 
