@@ -10,7 +10,6 @@ var db_config = {
     user: 'retail',
     password: 'xyzzy',
     db: 'retail',
-    multiStatements: true,
 }
 
 var inspect = require('util').inspect;
@@ -71,7 +70,7 @@ app.get('/init', function (req, res) {
                 "DROP TABLE IF EXISTS Customer",
                 "CREATE TABLE IF NOT EXISTS Customer (CustomerId INT PRIMARY KEY, FullName VARCHAR(32) NOT NULL, INDEX FullNameIndex (FullName))",
                 "CREATE TABLE IF NOT EXISTS Account (AccountId INT PRIMARY KEY, AccountType INT DEFAULT 0, Balance INT DEFAULT 0, CustomerId INT NOT NULL, FOREIGN KEY (CustomerId) REFERENCES Customer(CustomerId) ON DELETE CASCADE)",
-                "CREATE TABLE IF NOT EXISTS ClientStats (Received DATETIME, ClientIp VARCHAR(32), NumFails INT, NumOk INT, INDEX ReceivedIndex (Received))",
+                "CREATE TABLE IF NOT EXISTS ClientStats (Received DATETIME, ClientIp VARCHAR(32), NumFails INT, NumOk INT, PRIMARY KEY (Received, ClientIp))",
                 "DROP PROCEDURE IF EXISTS AccountBalanceTransfer",
                 "CREATE PROCEDURE AccountBalanceTransfer (fromId INT, toId INT, amount INT) NOT DETERMINISTIC MODIFIES SQL DATA SQL SECURITY DEFINER" +
                 "  this_proc:BEGIN" +
@@ -209,6 +208,7 @@ var pq_dashboard = c.prepare('SELECT * FROM Customer WHERE CustomerId = ?');
 
 app.get("/dashboard/:id", function (req, res) {
     // c.query("SELECT * FROM Customer WHERE CustomerId = ?", [req.params.id])
+    req.params.id = parseInt(req.params.id);
     c.query(pq_dashboard([parseInt(req.params.id)]))
     .on('error', function(err) {
         console.log(err);
@@ -366,12 +366,12 @@ if (!module.parent) {
         app.listen(listen_port);
     })
     .on('error', function(err) {
-        console.log(err.message);
+        console.log('Connection error: ' + err.message);
         process.exit(err.errno);
     })
     .on('close', function(hadError) {
         if (hadError) {
-            console.log(hadError.message);
+            console.log('Exiting due to error: ' + hadError,message);
             process.exit(hadError.errno);
         } else {
             console.log('Exiting.');
