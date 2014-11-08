@@ -309,6 +309,7 @@ app.get("/transfer", function (req, res) {
                         console.log('pq_transfer:result: ' + err.message);
                         res.status(500);
                         res.transfer_message = err.message;
+                        dbres.abort();
                     })
                 })
                 .on('end', function(info) {
@@ -329,8 +330,6 @@ app.get("/transfer", function (req, res) {
                 res.send(res.transfer_message);
         })
     })
-
-
 });
 
 app.get('/quit', function (req, res) {
@@ -339,25 +338,25 @@ app.get('/quit', function (req, res) {
 });
 
 app.get('/', function (req, res) {
-    res.send(' \
-<html> \
-<body> \
-<table> \
-<tr> <td><a href="/init"><tt>GET /init</tt></a></td>        <td>Initialize server tables and indices</td> </tr> \
-<tr> <td><a href="/check"><tt>GET /check</tt></a></td>      <td>Check that the sum of all accounts are zero</td> </tr> \
-<tr> <td><a href="/quit"><tt>GET /quit</tt></a></td>        <td>Quit the nodejs server application</td> </tr> \
-</table> \
-</body> \
-</html> \
-')
+    if (c.connected)
+        res.send("Database connected\r\n");
+    else
+        res.send("Database OFFLINE\r\n");
 })
 
 
 function connect_to_db() {
     c.connect(db_config);
     c.on('error', function(err) {
-        console.log('Database connection failed: ' + err.message);
+        console.log('Database connection failed, reconnecting: ' + err.message);
         setTimeout(connect_to_db, 1000);
+    })
+    c.on('close', function(err) {
+        console.log('Database connection closed, reconnecting: ' + err);
+        setTimeout(connect_to_db, 1000);
+    })
+    .on('connect', function() {
+        console.log('Connected to database');
     })
 }
 
@@ -370,7 +369,7 @@ if (!module.parent) {
         console.log('Using database config "' + db_config.user + ' @ unix:' + db_config.unixSocket + '"');
     else
         console.log('Using database config "' + db_config.user + ' @ tcp:' + db_config.host + '"');
+    connect_to_db();
     console.log('Starting application on port ' + listen_port);
     app.listen(listen_port);
-    connect_to_db();
 }
