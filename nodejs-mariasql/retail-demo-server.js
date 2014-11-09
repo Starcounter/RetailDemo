@@ -59,35 +59,40 @@ function process_query_list(res, next_query) {
     }
 }
 
+
 app.get('/init', function (req, res) {
     res.query_list =
             [
                 "DROP TABLE IF EXISTS ClientStats",
                 "DROP TABLE IF EXISTS Account",
                 "DROP TABLE IF EXISTS Customer",
+
                 "CREATE TABLE IF NOT EXISTS Customer (CustomerId INT PRIMARY KEY, FullName VARCHAR(32) NOT NULL, INDEX FullNameIndex (FullName))",
                 "CREATE TABLE IF NOT EXISTS Account (AccountId INT PRIMARY KEY, AccountType INT DEFAULT 0, Balance INT DEFAULT 0, CustomerId INT NOT NULL, FOREIGN KEY (CustomerId) REFERENCES Customer(CustomerId) ON DELETE CASCADE)",
                 "CREATE TABLE IF NOT EXISTS ClientStats (Received TIMESTAMP, ClientIp VARCHAR(32), NumFails INT, NumOk INT, PRIMARY KEY (Received, ClientIp))",
+
                 "DROP PROCEDURE IF EXISTS AccountBalanceTransfer",
                 "CREATE PROCEDURE AccountBalanceTransfer (fromId INT, toId INT, amount INT) NOT DETERMINISTIC MODIFIES SQL DATA SQL SECURITY DEFINER" +
-                "  this_proc:BEGIN" +
+                "  BEGIN" +
                 "    START TRANSACTION;" +
-                "    UPDATE Account SET Balance = Balance - amount WHERE AccountId = fromId AND Balance - amount >= 0;" +
-                "    IF ROW_COUNT() = 1 THEN" +
-                "      BEGIN" +
-                "        UPDATE Account SET Balance = Balance + amount WHERE AccountId = toId AND Balance + amount >= 0;" +
-                "        IF ROW_COUNT() = 1 THEN" +
-                "          BEGIN" +
-                "            COMMIT;" +
-                "            SELECT 1 AS Success;" +
-                "            LEAVE this_proc;" +
-                "          END;" +
-                "        END IF;" +
-                "      END;" +
+                "    UPDATE Account SET Balance = Balance + (" +
+                "      SELECT CASE " +
+                "        WHEN AccountId = toId" +
+                "           THEN amount" +
+                "           ELSE - amount" +
+                "        END" +
+                "      )" +
+                "    WHERE" +
+                "      (AccountId = fromId AND Balance - amount >= 0) " +
+                "      OR (AccountId = toId AND Balance + amount >= 0);" +
+                "    IF ROW_COUNT() = 2 THEN" +
+                "      COMMIT;" +
+                "      SELECT 1 AS Success;" +
+                "    ELSE" +
+                "      ROLLBACK;" +
+                "      SELECT 0 AS Success;" +
                 "    END IF;" +
-                "    ROLLBACK;" +
-                "    SELECT 0 AS Success;" +
-                "  END;"
+                "  END"
             ];
     res.query_results = [];
     res.status(204);
@@ -274,8 +279,25 @@ app.get("/balance/:id", function (req, res) {
     })
 });
 
+/*
+UPDATE Account SET Balance = (
+    SELECT CASE
+        WHEN AccountId = 2
+            THEN Balance + 200
+            ELSE Balance - 200
+       END
+    )
+WHERE
+    ((AccountId = 2 AND Balance + 200 >= 0) OR (AccountId = 4 AND Balance - 200 >= 0))
+
+    Ensure 2 rows affected, else rollback.
+
+  */
+
+
 var pq_balance = c.prepare('SELECT Balance FROM Account WHERE AccountId=?');
 var pq_transfer = c.prepare('CALL AccountBalanceTransfer(?, ?, ?)');
+
 app.get("/transfer", function (req, res) {
     req.query.f = parseInt(req.query.f)
     req.query.t = parseInt(req.query.t)
@@ -292,18 +314,7 @@ app.get("/transfer", function (req, res) {
     }
 
     // attempt the transfer before examining possible failure reasons
-
-    // make the UPDATE statements execute in AccountId order
-    // to avoid deadlocks in the database.
-    var from_acct = req.query.f;
-    var to_acct = req.query.t;
-    var transfer_amount = req.query.x;
-    if (from_acct > to_acct) {
-        from_acct = req.query.t;
-        to_acct = req.query.f;
-        transfer_amount = -req.query.x;
-    }
-    c.query(pq_transfer([from_acct, to_acct, transfer_amount]))
+    c.query(pq_transfer([req.query.f, req.query.t, req.query.x]))
     .on('error', function(err) {
         console.log('pq_transfer: ' + err.message);
         res.status(500);
@@ -321,9 +332,16 @@ app.get("/transfer", function (req, res) {
             }
         })
         .on('error', function(err) {
+            // this will usually be because of a deadlock
             console.log('pq_transfer:result: ' + err.message);
             res.status(500);
             res.transfer_message = err.message;
+            // unfortunately, the mariasql driver fails after this
+            // so try connecting again as a workaround
+            dbres.abort();
+            c.destroy();
+            c = new Client();
+            connect_to_db();
         })
     })
     .on('end', function(info) {
@@ -374,6 +392,8 @@ app.get('/', function (req, res) {
 
 
 function connect_to_db() {
+    if (c.connected)
+        return;
     c.connect(db_config);
     c.on('error', function(err) {
         console.log('Database connection failed, reconnecting: ' + err.message);
