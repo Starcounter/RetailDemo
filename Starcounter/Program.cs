@@ -39,7 +39,27 @@ namespace ScRetailDemo {
             Handle.GET("/init", () => {
 
                 // Creating all needed indexes.
-                CreateIndexes();
+                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountIdIndex").First == null)
+                    Db.SQL("CREATE UNIQUE INDEX AccountIdIndex ON Account (AccountId asc)");
+
+                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "CustomerIdIndex").First == null)
+                    Db.SQL("CREATE UNIQUE INDEX CustomerIdIndex ON Customer (CustomerId asc)");
+
+                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "FullNameIndex").First == null)
+                    Db.SQL("CREATE INDEX FullNameIndex ON Customer (FullName asc)");
+
+                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "CustomerIndex").First == null)
+                    Db.SQL("CREATE INDEX CustomerIndex ON Account (Customer, AccountId asc)");
+
+                try {
+                    //if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "Customer").First != null)
+                    Db.SQL("DROP INDEX Auto ON Customer");
+                } catch { }
+
+                try {
+                    //if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "Account").First != null)
+                    Db.SQL("DROP INDEX Auto ON Account");
+                } catch { }
 
                 // https://github.com/Starcounter/Starcounter/issues/1602
                 Json.DirtyCheckEnabled = false;
@@ -90,51 +110,55 @@ namespace ScRetailDemo {
             });
 
             Handle.GET("/transfer?f={?}&t={?}&x={?}", (int fromId, int toId, int amount) => {
-                Db.Transaction(() => {
-                    Account source = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", fromId).First;
-                    Account target = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", toId).First;
-                    source.Balance -= amount;
-                    target.Balance += amount;
-                    //if (source.Balance < 0 || target.Balance < 0 ) {
-                    //    throw new Exception("You cannot move money that is not in the account");
-                    //}
-                });
-                return 200;
+
+                ushort statusCode = 0;
+                String statusDescription = null;
+
+                if (fromId == toId) {
+                    statusDescription = "Giving money to yourself is redundant.";
+                    statusCode = 200;
+                } else if (amount <= 0) {
+                    statusDescription = "Amount to transfer must be positive.";
+                    statusCode = 400;
+                } else {
+                    Db.Transaction(() => {
+
+                        Account source = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", fromId).First;
+                        Account target = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", toId).First;
+
+                        if (source == null) {
+                            statusDescription = "Source account does not exist.";
+                            statusCode = 400;
+                        } else if (target == null) {
+                            statusDescription = "Target account does not exist.";
+                            statusCode = 400;
+                        } else if (source.Balance < amount) {
+                            statusDescription = "Insufficient funds on source account.";
+                            statusCode = 400;
+                        } else {
+                            source.Balance -= amount;
+                            target.Balance += amount;
+
+                            statusDescription = "Transfer OK.";
+                            statusCode = 200;
+                        }
+                    });
+                }
+
+                return new Response() { 
+                    StatusDescription = statusDescription,
+                    StatusCode = statusCode
+                };
             });
-        }
-
-        private static void CreateIndexes() {
-
-            if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountIdIndex").First == null) {
-
-                Db.SQL("CREATE UNIQUE INDEX AccountIdIndex ON Account (AccountId asc)");
-            }
-
-            if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "Account").First != null) {
-                Db.SQL("DROP INDEX Auto ON Account");
-            }
-
-            if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "CustomerIdIndex").First == null)
-                Db.SQL("CREATE UNIQUE INDEX CustomerIdIndex ON Customer (CustomerId asc)");
-
-            if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "FullNameIndex").First == null)
-                Db.SQL("CREATE INDEX FullNameIndex ON Customer (FullName asc)");
-
-            if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "CustomerIndex").First == null)
-                Db.SQL("CREATE INDEX CustomerIndex ON Account (Customer, AccountId asc)");
-
-            if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "Customer").First != null) {
-                Db.SQL("DROP INDEX Auto ON Customer");
-            }
         }
     }
 
     [Database]
-    public class ClientStatsEntry {
-        public String Received;
-        public String ClientIp;
-        public String NumFail;
-        public String NumOk;
+    public class ClientStatsEntry { // Statistics entry from the client.
+        public String Received; // Datetime when statistics received.
+        public String ClientIp; // Client IP address.
+        public String NumFail; // Number of failed responses since last report.
+        public String NumOk; // Number of successful responses since last report.
     }
 
     [Database]

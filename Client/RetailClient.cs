@@ -19,10 +19,10 @@ namespace PokerDemoConsole {
 
         public const String Separator = "----------------------------------";
         public const Int32 MaxAccountsPerCustomer = 5;
-        public const Int32 MinInitialBalance = 0;
+        public const Int32 MinInitialBalance = 100000;
         public const Int32 MaxInitialBalance = 100000;
         public const Int32 MaxTransferAmount = 1000;
-        public const Int32 SendStatsNumSeconds = 10;
+        public const Int32 SendStatsNumSeconds = 1;
         
         readonly public Int32 NumCustomers = 10000;
 
@@ -997,7 +997,9 @@ SEND_DATA:
             Int32 curIdIndex = 0;
             Int32 n = 0;
 
-            // Creating each customer.
+            // Creating each customer and accounts.
+            Int64 totalMoneyOnAllAccounts = 0, totalAccountsNum = 0;
+
             for (Int32 i = 0; i < settings_.NumCustomers; i++) {
 
                 // Inserting customers only if in inserting mode.
@@ -1013,15 +1015,20 @@ SEND_DATA:
                 customers_[i].FullName = allNames[rand0_.Next(allNames.Length)] + allSurnames[rand0_.Next(allSurnames.Length)];
 
                 Int32 numAccounts = 1 + rand0_.Next(Settings.MaxAccountsPerCustomer);
+                totalAccountsNum += numAccounts;
 
                 for (Int32 a = 0; a < numAccounts; a++) {
 
                     var account = customers_[i].Accounts.Add();
                     account.AccountId = customersAndAccountsIds[curIdIndex];
                     account.Balance = rand0_.Next(Settings.MinInitialBalance, Settings.MaxInitialBalance);
+                    totalMoneyOnAllAccounts += account.Balance;
                     curIdIndex++;
                 }
             }
+
+            Console.WriteLine("Total money on " + totalAccountsNum + " accounts: " + totalMoneyOnAllAccounts);
+            Console.WriteLine("Average money on each account: " + ((Double) totalMoneyOnAllAccounts / totalAccountsNum));
 
             for (Int32 i = 0; i < settings_.NumTransferMoneyBetweenTwoAccounts; i++) {
                 randomRequestTypes_[n] = (Byte)RequestTypes.TransferMoneyBetweenTwoAccounts;
