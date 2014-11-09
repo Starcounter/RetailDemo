@@ -58,9 +58,6 @@ function process_query_list(res, next_query) {
         }
     }
 }
-//"DELETE FROM Account",
-//"DELETE FROM Customer",
-//"DELETE FROM ClientStats",
 
 app.get('/init', function (req, res) {
     res.query_list =
@@ -75,10 +72,10 @@ app.get('/init', function (req, res) {
                 "CREATE PROCEDURE AccountBalanceTransfer (fromId INT, toId INT, amount INT) NOT DETERMINISTIC MODIFIES SQL DATA SQL SECURITY DEFINER" +
                 "  this_proc:BEGIN" +
                 "    START TRANSACTION;" +
-                "    UPDATE Account SET Balance = Balance - amount WHERE AccountId = fromId AND Balance >= amount;" +
+                "    UPDATE Account SET Balance = Balance - amount WHERE AccountId = fromId AND Balance - amount >= 0;" +
                 "    IF ROW_COUNT() = 1 THEN" +
                 "      BEGIN" +
-                "        UPDATE Account SET Balance = Balance + amount WHERE AccountId = toId;" +
+                "        UPDATE Account SET Balance = Balance + amount WHERE AccountId = toId AND Balance + amount >= 0;" +
                 "        IF ROW_COUNT() = 1 THEN" +
                 "          BEGIN" +
                 "            COMMIT;" +
@@ -259,6 +256,24 @@ app.get("/customers", function (req, res) {
     })
 });
 
+app.get("/balance/:id", function (req, res) {
+    c.query("SELECT Balance FROM Account WHERE AccountId = ?", [req.params.id])
+    .on('error', function(err) {
+        console.log(err);
+        res.status(500).send(err.message);
+    })
+    .on('result', function(balance_res) {
+        balance_res
+        .on('row', function(balance_row) {
+            res.json(balance_row);
+        })
+        .on('end', function(info) {
+            if (!info.numRows)
+                res.sendStatus(204)
+        })
+    })
+});
+
 var pq_balance = c.prepare('SELECT Balance FROM Account WHERE AccountId=?');
 var pq_transfer = c.prepare('CALL AccountBalanceTransfer(?, ?, ?)');
 app.get("/transfer", function (req, res) {
@@ -276,59 +291,72 @@ app.get("/transfer", function (req, res) {
         return;
     }
 
-    c.query(pq_balance([req.query.f]))
+    // attempt the transfer before examining possible failure reasons
+
+    // make the UPDATE statements execute in AccountId order
+    // to avoid deadlocks in the database.
+    var from_acct = req.query.f;
+    var to_acct = req.query.t;
+    var transfer_amount = req.query.x;
+    if (from_acct > to_acct) {
+        from_acct = req.query.t;
+        to_acct = req.query.f;
+        transfer_amount = -req.query.x;
+    }
+    c.query(pq_transfer([from_acct, to_acct, transfer_amount]))
     .on('error', function(err) {
-        console.log('pq_balance: ' + err.message);
-        res.status(500).send(err.message);
+        console.log('pq_transfer: ' + err.message);
+        res.status(500);
+        res.transfer_message = err.message;
     })
     .on('result', function(dbres) {
-        res.status(400);
-        res.transfer_message = 'Source account does not exist';
         dbres
         .on('row', function(row) {
-            res.transfer_message = '';
-            if (row.Balance >= req.query.x) {
-                c.query(pq_transfer([req.query.f, req.query.t, req.query.x]))
-                .on('error', function(err) {
-                    console.log('pq_transfer: ' + err.message);
-                    res.status(500);
-                    res.transfer_message = err.message;
-                })
-                .on('result', function(dbres) {
-                    dbres
-                    .on('row', function(row) {
-                        if (row.Success === '1') {
-                            res.status(200);
-                            res.transfer_message = 'Transfer approved';
-                        } else {
-                            res.status(200);
-                            res.transfer_message = 'Transfer denied';
-                        }
-                    })
-                    .on('error', function(err) {
-                        console.log('pq_transfer:result: ' + err.message);
-                        res.status(500);
-                        res.transfer_message = err.message;
-                        dbres.abort();
-                    })
-                })
-                .on('end', function(info) {
-                    if (!res.headersSent && res.transfer_message)
-                        res.send(res.transfer_message);
-                })
-            } else {
+            if (row.Success === '1') {
                 res.status(200);
-                res.transfer_message = 'Insufficient funds on source account';
+                res.transfer_message = 'Transfer OK';
+            } else {
+                res.status(400);
+                res.transfer_message = 'Transfer failed';
             }
         })
         .on('error', function(err) {
-            console.log('pq_balance:result:error: ' + err.message);
-            res.status(500).send(err.message);
+            console.log('pq_transfer:result: ' + err.message);
+            res.status(500);
+            res.transfer_message = err.message;
         })
-        .on('end', function(info) {
+    })
+    .on('end', function(info) {
+        if (res.status === 400) {
+            // examine possible reasons for transfer denied
+            c.query(pq_balance([req.query.f]))
+            .on('error', function(err) {
+                console.log('pq_balance: ' + err.message);
+                res.status(500).send(err.message);
+            })
+            .on('result', function(dbres) {
+                dbres
+                .on('row', function(row) {
+                    if (row.Balance < req.query.x) {
+                        res.status(300);
+                        res.transfer_message = 'Insufficient funds on source account';
+                    }
+                })
+                .on('error', function(err) {
+                    console.log('pq_balance:result:error: ' + err.message);
+                    res.status(500).send(err.message);
+                })
+            })
+            .on('end', function(info) {
+                if (!info.numRows)
+                    res.transfer_message = 'Source account does not exist';
+                if (!res.headersSent && res.transfer_message)
+                    res.send(res.transfer_message);
+            })
+        } else {
             if (!res.headersSent && res.transfer_message)
                 res.send(res.transfer_message);
-        })
+        }
     })
 });
 
