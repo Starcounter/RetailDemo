@@ -22,7 +22,7 @@ namespace PokerDemoConsole {
         public const Int32 MinInitialBalance = 100000;
         public const Int32 MaxInitialBalance = 100000;
         public const Int32 MaxTransferAmount = 1000;
-        public const Int32 SendStatsNumSeconds = 1;
+        public const Int32 SendStatsNumSeconds = 10;
         
         readonly public Int32 NumCustomers = 10000;
 
@@ -319,20 +319,12 @@ namespace PokerDemoConsole {
         public IRequestsCreator Irc;
         public Int32 NumBodyCharacters;
         public CountdownEvent WaitForAllWorkersEvent;
-        public Int32 NumTotalFailResponses;
-        public Int32 NumTotalOkResponses;
+        public volatile Int32 NumTotalFailResponses;
+        public volatile Int32 NumTotalOkResponses;
         public Int32 WorkersRPS;
         public Int32 ExitCode;
         public String ServerIp;
         public UInt16 ServerPort;
-
-        public void SafeIncrementNumTotalFailResponses() {
-            Interlocked.Add(ref NumTotalFailResponses, 1);
-        }
-
-        public void SafeIncrementNumTotalOkResponses() {
-            Interlocked.Add(ref NumTotalOkResponses, 1);
-        }
     };
 
     class Worker {
@@ -441,9 +433,9 @@ namespace PokerDemoConsole {
             WorkerSettings ws = (WorkerSettings) userObject;
 
             if (resp.IsSuccessStatusCode) {
-                ws.SafeIncrementNumTotalOkResponses();
+                ws.NumTotalOkResponses++;
             } else {
-                ws.SafeIncrementNumTotalFailResponses();
+                ws.NumTotalFailResponses++;
             }
 
             ws.Irc.IncrementTotalNumResponses(1);
@@ -1387,12 +1379,12 @@ SEND_DATA:
         /// <summary>
         /// Total number of failed responses since last statistics transfer.
         /// </summary>
-        static Int32 lastTotalNumFailResponses_ = 0;
+        static Int64 lastTotalNumFailResponses_ = 0;
 
         /// <summary>
         /// Total number of successful responses since last statistics transfer.
         /// </summary>
-        static Int32 lastTotalNumOkResponses_ = 0;
+        static Int64 lastTotalNumOkResponses_ = 0;
 
         /// <summary>
         /// Reports performance statistics to database.
@@ -1407,21 +1399,21 @@ SEND_DATA:
                 return;
 
             // Collecting number of failed responses from each worker.
-            Int32 totalNumFailResponses = 0;
+            Int64 totalNumFailResponses = 0;
             for (Int32 i = 0; i < workerSettings.Length; i++) {
                 totalNumFailResponses += workerSettings[i].NumTotalFailResponses;
             }
 
-            Int32 numFailResponses = totalNumFailResponses - lastTotalNumFailResponses_;
+            Int64 numFailResponses = totalNumFailResponses - lastTotalNumFailResponses_;
             lastTotalNumFailResponses_ = totalNumFailResponses;
 
             // Collecting number of successful responses from each worker.
-            Int32 totalNumOkResponses = 0;
+            Int64 totalNumOkResponses = 0;
             for (Int32 i = 0; i < workerSettings.Length; i++) {
                 totalNumOkResponses += workerSettings[i].NumTotalOkResponses;
             }
 
-            Int32 numOkResponses = totalNumOkResponses - lastTotalNumOkResponses_;
+            Int64 numOkResponses = totalNumOkResponses - lastTotalNumOkResponses_;
             lastTotalNumOkResponses_ = totalNumOkResponses;
 
             // Creating stats URL.
@@ -1575,28 +1567,40 @@ SEND_DATA:
 
                 Int32 maxWorkerTimeSeconds = 10000;
                 Int32 numSecondsLastStat = Settings.SendStatsNumSeconds;
+                Int32[] lastTotalResponsesPerWorker = new Int32[settings.NumWorkersTotal];
 
                 // Looping until worker finish events are set.
+                Stopwatch statsTimer = Stopwatch.StartNew();
                 while (waitForAllWorkersEvent.CurrentCount > 0) {
+
+                    Thread.Sleep(1000);
 
                     lock (settings) {
 
-                        for (Int32 i = 0; i < settings.NumWorkersTotal; i++) {
+                        statsTimer.Stop();
+                        Int64 numMsElapsed = statsTimer.ElapsedMilliseconds;
+                        statsTimer.Restart();
 
-                            // Calculating worker RPS.
-                            Int32 approxWorkersRPS = (Int32)((workerSettings[i].NumTotalOkResponses + workerSettings[i].NumTotalFailResponses) * 1000.0 / timer.ElapsedMilliseconds);
+                        for (Int32 i = 0; i < workerSettings.Length; i++) {
 
-                            Console.WriteLine(String.Format("[{0}] for {1}:{2} total OK resps: {3} ({4} failed) RPS {5}.",
+                            Int32 totalNumOkPerWorker = workerSettings[i].NumTotalOkResponses,
+                                totalNumFailPerWorker = workerSettings[i].NumTotalFailResponses;
+
+                            Int32 curTotalResponsesPerWorker = totalNumOkPerWorker + totalNumFailPerWorker;
+                            Int32 approxWorkersRPS = (Int32) ((Double)((curTotalResponsesPerWorker - lastTotalResponsesPerWorker[i]) * 1000.0) / numMsElapsed);
+                            lastTotalResponsesPerWorker[i] = curTotalResponsesPerWorker;
+
+                            Console.WriteLine(String.Format("[{0}] for {1}:{2} total OK: {3} ({4} failed) RPS {5} over {6} ms.",
                                 i,
                                 workerSettings[i].ServerIp, 
                                 workerSettings[i].ServerPort,
-                                workerSettings[i].NumTotalOkResponses,
-                                workerSettings[i].NumTotalFailResponses,
-                                approxWorkersRPS));
+                                totalNumOkPerWorker,
+                                totalNumFailPerWorker,
+                                approxWorkersRPS,
+                                numMsElapsed));
                         }
                     }
-
-                    Thread.Sleep(1000);
+                    
                     numSecondsLastStat--;
 
                     // Checking if its time to report statistics.

@@ -74,7 +74,13 @@ namespace ScRetailDemo {
             });
 
             Handle.GET("/serverAggregates", () => {
-                return "AccountBalanceTotal=" + Db.SlowSQL<Int64>("SELECT SUM (a.Balance) FROM Account a").First;
+                ThreadHelper.SetYieldBlock();
+                try {
+                    return "AccountBalanceTotal=" + Db.SlowSQL<Int64>("SELECT SUM (a.Balance) FROM Account a").First;
+                }
+                finally {
+                    ThreadHelper.ReleaseYieldBlock();
+                }
             });
 
             Handle.GET("/customers/{?}", (int customerId) => {
