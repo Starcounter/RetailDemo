@@ -22,7 +22,7 @@ namespace PokerDemoConsole {
         public const Int32 MinInitialBalance = 100000;
         public const Int32 MaxInitialBalance = 100000;
         public const Int32 MaxTransferAmount = 1000;
-        public const Int32 SendStatsNumSeconds = 10;
+        public const Int32 SendStatsNumSeconds = 1;
         
         readonly public Int32 NumCustomers = 10000;
 
