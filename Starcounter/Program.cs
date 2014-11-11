@@ -10,7 +10,8 @@ namespace ScRetailDemo {
         static void Main() {
 
             // Handler that adds statistics from client.
-            Handle.GET("/addstats?numFail={?}&numOk={?}", (Request req, String numFail, String numOk) => {
+            Handle.GET("/addstats?numFail={?}&numOk={?}&numReads={?}&numWrites={?}",
+                (Request req, String numFail, String numOk, String numReads, String numWrites) => {
 
                 Db.Transaction(() => {
 
@@ -18,7 +19,9 @@ namespace ScRetailDemo {
                         Received = DateTime.Now.ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fff'Z'"),
                         ClientIp = req.ClientIpAddress.ToString(),
                         NumFail = numFail,
-                        NumOk = numOk
+                        NumOk = numOk,
+                        NumReads = numReads,
+                        NumWrites = numWrites
                     };
 
                 });
@@ -165,6 +168,8 @@ namespace ScRetailDemo {
         public String ClientIp; // Client IP address.
         public String NumFail; // Number of failed responses since last report.
         public String NumOk; // Number of successful responses since last report.
+        public String NumReads; // Number of reads since last report.
+        public String NumWrites; // Number of writes since last report.
     }
 
     [Database]

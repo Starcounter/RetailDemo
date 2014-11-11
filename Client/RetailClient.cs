@@ -23,6 +23,7 @@ namespace PokerDemoConsole {
         public const Int32 MaxInitialBalance = 100000;
         public const Int32 MaxTransferAmount = 1000;
         public const Int32 SendStatsNumSeconds = 1;
+        public const Int32 DefaultTimeoutMs = 20000;
         
         readonly public Int32 NumCustomers = 10000;
 
@@ -189,10 +190,6 @@ namespace PokerDemoConsole {
             // Checking if we are inserting new objects.
             if (Inserting) {
 
-                if (NumWorkersPerServerEndpoint > 1) {
-                    throw new ArgumentException("Inserting but NumWorkersPerServerEndpoint > 1");
-                }
-
                 if (NumCustomers <= 0) {
                     throw new ArgumentException("Inserting but NumCustomers <= 0");
                 }
@@ -240,6 +237,11 @@ namespace PokerDemoConsole {
     public class RequestData {
 
         /// <summary>
+        /// Request type.
+        /// </summary>
+        RequestTypes requestType_;
+
+        /// <summary>
         /// Pre-allocated bytes of maximum size where the request will sit.
         /// </summary>
         Byte[] dataBytes_;
@@ -281,6 +283,15 @@ namespace PokerDemoConsole {
                 dataLength_ = value;
             }
         }
+
+        public RequestTypes RequestType {
+            get {
+                return requestType_;
+            }
+            set {
+                requestType_ = value;
+            }
+        }
     }
 
     public interface IRequestsCreator {
@@ -306,7 +317,7 @@ namespace PokerDemoConsole {
         void IncrementTotalNumResponses(Int32 num);
     }
 
-    enum RequestTypes {
+    public enum RequestTypes {
         InsertCustomers,
         TransferMoneyBetweenTwoAccounts,
         GetCustomerAndAccounts,
@@ -321,10 +332,43 @@ namespace PokerDemoConsole {
         public CountdownEvent WaitForAllWorkersEvent;
         public volatile Int32 NumTotalFailResponses;
         public volatile Int32 NumTotalOkResponses;
+        public volatile Int32 NumTotalReads;
+        public volatile Int32 NumTotalWrites;
         public Int32 WorkersRPS;
         public Int32 ExitCode;
         public String ServerIp;
         public UInt16 ServerPort;
+
+        /// <summary>
+        /// Increments some statistics.
+        /// </summary>
+        public void IncrementStats(RequestTypes rt) {
+
+            // Checking request type.
+            switch (rt) {
+
+                case RequestTypes.InsertCustomers:
+                case RequestTypes.TransferMoneyBetweenTwoAccounts: {
+
+                    NumTotalWrites++;
+
+                    break;
+                }
+
+                case RequestTypes.GetCustomerAndAccounts:
+                case RequestTypes.GetCustomerByFullName:
+                case RequestTypes.GetCustomerById: {
+
+                    NumTotalReads++;
+
+                    break;
+                }
+
+                default: {
+                    throw new ArgumentException("Wrong request type!");
+                }
+            }
+        }
     };
 
     class Worker {
@@ -456,8 +500,9 @@ namespace PokerDemoConsole {
                 Int32 totalNumSentRequests = 0;
                 
                 // Preallocating requests array.
-                RequestData[] reqData = new RequestData[NumRequestsInSingleSend];
-                for (Int32 i = 0; i < NumRequestsInSingleSend; i++) {
+                Int32 numRequestsInSingleSend = NumRequestsInSingleSend / 100;
+                RequestData[] reqData = new RequestData[numRequestsInSingleSend];
+                for (Int32 i = 0; i < numRequestsInSingleSend; i++) {
                     reqData[i] = new RequestData(1024);
                 }
 
@@ -472,6 +517,11 @@ namespace PokerDemoConsole {
 
                         for (Int32 i = 0; i < numRequestsToSend; i++) {
 
+                            // Checking request type.
+                            ws_.IncrementStats(reqData[i].RequestType);
+
+                            // Console.WriteLine("Request: " + UTF8Encoding.UTF8.GetString(reqData[i].DataBytes, 0, reqData[i].DataLength));
+
                             // Checking if we are using sync or async node calls.
                             if (!globalSettings_.DoAsyncNode) {
 
@@ -483,7 +533,7 @@ namespace PokerDemoConsole {
                                     null,
                                     null,
                                     null,
-                                    0,
+                                    Settings.DefaultTimeoutMs,
                                     null,
                                     reqData[i].DataBytes,
                                     reqData[i].DataLength);
@@ -501,7 +551,7 @@ namespace PokerDemoConsole {
                                     null,
                                     CheckResponsesForNode,
                                     ws_,
-                                    0,
+                                    Settings.DefaultTimeoutMs,
                                     null,
                                     reqData[i].DataBytes,
                                     reqData[i].DataLength);
@@ -616,8 +666,9 @@ namespace PokerDemoConsole {
                 Int64 origChecksum = 0;
                             
                 // Preallocating requests array.
-                RequestData[] reqData = new RequestData[NumRequestsInSingleSend];
-                for (Int32 i = 0; i < NumRequestsInSingleSend; i++) {
+                Int32 numRequestsInSingleSend = NumRequestsInSingleSend / 10;
+                RequestData[] reqData = new RequestData[numRequestsInSingleSend];
+                for (Int32 i = 0; i < numRequestsInSingleSend; i++) {
                     reqData[i] = new RequestData(1024);
                 }
 
@@ -687,6 +738,9 @@ SEND_DATA:
 
                                 // Placing each request in aggregation buffer.
                                 for (Int32 rn = 0; rn < numRequestsToSend; rn++) {
+
+                                    // Checking request type.
+                                    ws_.IncrementStats(reqData[rn].RequestType);
 
                                     Byte[] httpRequestBytes = reqData[rn].DataBytes;
                                     Int32 httpRequestBytesLength = reqData[rn].DataLength;
@@ -956,7 +1010,7 @@ SEND_DATA:
             workerRandoms_ = new Random[settings.NumWorkersTotal];
 
             for (Int32 i = 0; i < settings.NumWorkersTotal; i++) {
-                workerRandoms_[i] = new Random(BitConverter.ToInt32(Settings.LocalIPAddress.GetAddressBytes(), 0));
+                workerRandoms_[i] = new Random(i + BitConverter.ToInt32(Settings.LocalIPAddress.GetAddressBytes(), 0));
             }
 
             // Calculating total number of planned requests.
@@ -1063,10 +1117,9 @@ SEND_DATA:
         /// <summary>
         /// Getting number of requests.
         /// </summary>
-        /// <param name="requestsToFill"></param>
-        /// <param name="workerId"></param>
-        /// <returns></returns>
-        public Int32 GetABunchOfRequests(RequestData[] requestsToFill, Int32 workerId) {
+        public Int32 GetABunchOfRequests(
+            RequestData[] requestsToFill,
+            Int32 workerId) {
 
             Int32 offset = 0, numToProcess = requestsToFill.Length;
 
@@ -1142,9 +1195,14 @@ SEND_DATA:
 
                         break;
                     }
+
+                    default: {
+                        throw new ArgumentException("Wrong request type!");
+                    }
                 }
 
                 requestsToFill[i].DataLength = r.ConstructFromFields(false, requestsToFill[i].DataBytes);
+                requestsToFill[i].RequestType = rt;
 
                 offset++;
             }
@@ -1387,6 +1445,16 @@ SEND_DATA:
         static Int64 lastTotalNumOkResponses_ = 0;
 
         /// <summary>
+        /// Total number of read requests since last statistics transfer.
+        /// </summary>
+        static Int64 lastTotalNumReads_ = 0;
+
+        /// <summary>
+        /// Total number of write requests since last statistics transfer.
+        /// </summary>
+        static Int64 lastTotalNumWrites_ = 0;
+
+        /// <summary>
         /// Reports performance statistics to database.
         /// </summary>
         static void ReportPerformanceStats(
@@ -1416,10 +1484,30 @@ SEND_DATA:
             Int64 numOkResponses = totalNumOkResponses - lastTotalNumOkResponses_;
             lastTotalNumOkResponses_ = totalNumOkResponses;
 
-            // Creating stats URL.
-            String statsUri = "/addstats?numFail=" + numFailResponses + "&numOk=" + numOkResponses;
+            Int64 totalNumReads = 0;
+            for (Int32 i = 0; i < workerSettings.Length; i++) {
+                totalNumReads += workerSettings[i].NumTotalReads;
+            }
 
-            Response resp = nodeClient.GET(statsUri);
+            Int64 numReads = totalNumReads - lastTotalNumReads_;
+            lastTotalNumReads_ = totalNumReads;
+
+            Int64 totalNumWrites = 0;
+            for (Int32 i = 0; i < workerSettings.Length; i++) {
+                totalNumWrites += workerSettings[i].NumTotalWrites;
+            }
+
+            Int64 numWrites = totalNumWrites - lastTotalNumWrites_;
+            lastTotalNumWrites_ = totalNumWrites;
+
+            // Creating stats URL.
+            String statsUri = String.Format("/addstats?numFail={0}&numOk={1}&numReads={2}&numWrites={3}",
+                numFailResponses,
+                numOkResponses,
+                numReads,
+                numWrites);
+
+            Response resp = nodeClient.GET(statsUri, Settings.DefaultTimeoutMs);
 
             if (!resp.IsSuccessStatusCode) {
                 throw new Exception("Can't update test statistics: " + resp.Body);
@@ -1508,6 +1596,8 @@ SEND_DATA:
                                 WaitForAllWorkersEvent = waitForAllWorkersEvent,
                                 NumTotalOkResponses = 0,
                                 NumTotalFailResponses = 0,
+                                NumTotalReads = 0,
+                                NumTotalWrites = 0,
                                 WorkersRPS = 0,
                                 ExitCode = 0,
                                 ServerIp = serverIp,
