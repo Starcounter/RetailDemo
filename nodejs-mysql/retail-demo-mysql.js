@@ -3,69 +3,86 @@
 
 var listen_port = '3000';
 var db_config = {
+    connectionLimit: 60,
     socketPath: '/var/run/mysqld/mysqld.sock',
     user: 'retail',
     password: 'xyzzy',
     database: 'retail',
+    queueLimit: 10,
+    waitForConnections: true,
+    acquireTimeout: 10000,
 }
 
 var inspect = require('util').inspect;
 var express = require('express')
 var bodyParser = require('body-parser');
 var mysql = require('mysql');
-var c = mysql.createConnection(db_config);
 var app = express();
+var pool = mysql.createPool(db_config);
+
+var os = require('os');
+var ifaces = os.networkInterfaces();
+var server_ip = '127.0.0.1';
+for (var dev in ifaces) {
+    ifaces[dev].forEach(function(details) {
+        if (details.family==='IPv4' && dev !== 'lo') {
+            server_ip = details.address;
+        }
+    });
+}
+
+pool.on('enqueue', function () {
+  console.log(server_ip + ':' + listen_port + ' waiting for available connection slot');
+});
+
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 function run_query(res, next_query, callback) {
-    res.run_query_rows = [];
-    c.query(next_query)
-    .on('error', function(err) {
-        console.log(next_query);
-        console.log(err);
-        res.status(500);
-        callback(err);
-    })
-    .on('result', function(row) {
-        res.run_query_rows.push(row);
-    })
-    .on('end', function(info) {
-        callback(res.run_query_rows);
-    })
+    pool.query(next_query, function (err, dbres) {
+       if (err) {
+           console.log('run_query "' + next_query + '" failed: ' + err.code);
+           res.status(500);
+           res.query_results.push(err.code);
+       } else {
+           res.query_results.push(dbres[0]);
+       }
+       callback();
+    });
 }
 
 function process_query_list(res, next_query) {
     if (next_query) {
-        run_query(res, next_query, function(query_result) {
-            res.query_results.push(query_result);
+        run_query(res, next_query, function() {
             return process_query_list(res, res.query_list.shift());
         })
     } else {
-        if (res.statusCode < 300) {
-            res.sendStatus(res.statusCode);
-        } else {
-            console.log(res.statusCode + ": " + req.query_results);
+        if (!res.headersSent) {
             res.json(res.query_results);
+        } else {
+            console.log(res.statusCode + ": " + res.query_results);
         }
     }
 }
 
-
 app.get('/init', function (req, res) {
+    console.log("/init called");
     res.query_list =
             [
-                "DROP TABLE IF EXISTS ClientStats",
                 "DROP TABLE IF EXISTS Account",
                 "DROP TABLE IF EXISTS Customer",
-
+                "DROP TABLE IF EXISTS ClientStats",
+                "CREATE TABLE IF NOT EXISTS ClientStats (SeqNo INT PRIMARY KEY AUTO_INCREMENT, Received TIMESTAMP, ServerIpPort VARCHAR(40), numFail INT, numOk INT, numReads INT, numWrites INT, INDEX ReceivedIndex (Received))",
                 "CREATE TABLE IF NOT EXISTS Customer (CustomerId INT PRIMARY KEY, FullName VARCHAR(32) NOT NULL, INDEX FullNameIndex (FullName))",
                 "CREATE TABLE IF NOT EXISTS Account (AccountId INT PRIMARY KEY, AccountType INT DEFAULT 0, Balance INT DEFAULT 0, CustomerId INT NOT NULL, FOREIGN KEY (CustomerId) REFERENCES Customer(CustomerId) ON DELETE CASCADE)",
-                "CREATE TABLE IF NOT EXISTS ClientStats (Received TIMESTAMP, ClientIp VARCHAR(32), NumFails INT, NumOk INT, PRIMARY KEY (Received, ClientIp))",
 
                 "DROP PROCEDURE IF EXISTS AccountBalanceTransfer",
                 "CREATE PROCEDURE AccountBalanceTransfer (fromId INT, toId INT, amount INT) NOT DETERMINISTIC MODIFIES SQL DATA SQL SECURITY DEFINER" +
                 "  BEGIN" +
+                "    DECLARE EXIT HANDLER FOR SQLEXCEPTION "+
+                "    BEGIN"+
+                "      SELECT 0 AS Success;" +
+                "    END;"+
                 "    START TRANSACTION;" +
                 "    UPDATE Account SET Balance = Balance + (" +
                 "      SELECT CASE " +
@@ -75,8 +92,7 @@ app.get('/init', function (req, res) {
                 "        END" +
                 "      )" +
                 "    WHERE" +
-                "      (AccountId = fromId AND Balance - amount >= 0) " +
-                "      OR (AccountId = toId AND Balance + amount >= 0);" +
+                "      (AccountId = fromId AND Balance >= amount) OR AccountId = toId;"+
                 "    IF ROW_COUNT() = 2 THEN" +
                 "      COMMIT;" +
                 "      SELECT 1 AS Success;" +
@@ -91,46 +107,65 @@ app.get('/init', function (req, res) {
     process_query_list(res, res.query_list.shift());
 });
 
+//  /addstats?numFail=X&numOk=Y&numReads=A&numWrites=B
 app.get("/addstats", function (req, res) {
-    c.query("INSERT INTO ClientStats VALUES (NOW(), "+c.escape(req.ip)+", "+c.escape(req.query.numFail)+", "+c.escape(req.query.numOk)+")")
-    .on('error', function(err) {
-        console.log(err);
-        res.status(500).send(err.message);
-    })
-    .on('end', function() {
-        res.sendStatus(200);
-    })
+    pool.getConnection(function(err, conn) {
+        if (err) {
+            console.log('add_stats:getConnection: ' + err.code);
+            res.sendStatus(500);
+        } else {
+            var add_stats_query = "INSERT INTO ClientStats VALUES (0, NOW(), " +
+                    pool.escape(server_ip + ':' + listen_port) + ", " +
+                    pool.escape(req.query.numFail) + ", " +
+                    pool.escape(req.query.numOk) + ", " +
+                    pool.escape(req.query.numReads) + ", " +
+                    pool.escape(req.query.numWrites) +
+                    ")";
+            console.log(server_ip + ':' + listen_port + ' ' + add_stats_query);
+            conn.query(add_stats_query, function (err, dbres) {
+                if (err) {
+                    conn.destroy();
+                    console.log(err);
+                    res.status(500).send(err.code);
+                } else {
+                    conn.release();
+                    res.status(200).send('Stats added');
+                }
+            });
+        }
+    });
 });
 
 app.get("/stats", function (req, res) {
     res.ClientInfos = [];
-    c.query("SELECT * FROM ClientStats")
-    .on('error', function(err) {
-        console.log(err);
-        res.status(500).send(err.message);
-    })
-    .on('result', function(row) {
-        res.ClientInfos.push(row);
-    })
-    .on('end', function(info) {
-        res.json(res.ClientInfos);
-    })
+    pool.query("SELECT * FROM ClientStats", function (err, dbres) {
+        if (err) {
+            console.log(err);
+            res.status(500).send(err.code);
+        } else {
+            res.json(dbres);
+        }
+    });
 });
 
 app.get("/serverAggregates", function (req, res) {
-    c.query("SELECT SUM(Balance) AS AccountBalanceTotal FROM Account")
-    .on('error', function(err) {
-        console.log(err);
-        res.status(500).send(err.message);
-    })
-    .on('result', function(row) {
-        res.send('AccountBalanceTotal=' + row.AccountBalanceTotal);
-    })
+    pool.query("SELECT SUM(Balance) AS AccountBalanceTotal FROM Account", function (err, dbres) {
+        if (err) {
+            console.log(err);
+            res.status(500).send(err.code);
+        } else {
+            if (dbres[0])
+                res.send('AccountBalanceTotal=' + dbres[0].AccountBalanceTotal);
+            else
+                res.sendStatus(404);
+        }
+    });
 });
 
 
 app.post("/customers/:id", function (req, res) {
-    res.query_list = ["INSERT INTO Customer VALUES (" + c.escape(req.params.id) + ", " + c.escape(req.body.FullName) + ")"];
+    // console.log("Adding CustomerId " + pool.escape(req.params.id));
+    res.query_list = ["INSERT INTO Customer VALUES (" + pool.escape(req.params.id) + ", " + pool.escape(req.body.FullName) + ")"];
     for (n in req.body.Accounts) {
         if (typeof req.body.Accounts[n].AccountType == 'undefined')
             req.body.Accounts[n].AccountType = 0;
@@ -145,67 +180,67 @@ app.post("/customers/:id", function (req, res) {
                     ")");
     }
     res.query_results = [];
+    // console.log(inspect(res.query_list));
     process_query_list(res, res.query_list.shift());
 });
 
 app.get("/customers/:id", function (req, res) {
     res.query_result = null;
-    c.query('SELECT * FROM Customer WHERE CustomerId = ' + c.escape(req.params.id))
-    .on('error', function(err) {
-        console.log(err);
-        res.status(500).send(err.message);
-    })
-    .on('result', function(row) {
-        res.query_result = row;
-    })
-    .on('end', function() {
-        if (res.query_result)
-            res.json(res.query_result);
-        else
-            res.sendStatus(404);
-    })
+    pool.query('SELECT * FROM Customer WHERE CustomerId = ' + pool.escape(req.params.id), function (err, dbres) {
+        if (err) {
+            console.log(err);
+            res.status(500).send(err.code);
+        } else {
+            if (dbres[0])
+                res.json(dbres[0]);
+            else
+                res.sendStatus(404);
+        }
+    });
 });
 
 app.get("/customers", function (req, res) {
     res.query_result = [];
-    c.query("SELECT * FROM Customer WHERE FullName = " +c.escape(req.query.f))
-    .on('error', function(err) {
-        console.log(err);
-        res.status(500).send(err.message);
-    })
-    .on('result', function(row) {
-        res.query_result.push(row);
-    })
-    .on('end', function() {
-        if (!res.query_result)
-            res.sendStatus(404);
-        else
-            res.json(res.query_result);
-    })
+    pool.query("SELECT * FROM Customer WHERE FullName = " +pool.escape(req.query.f) + " LIMIT 1", function (err, dbres) {
+        if (err) {
+            console.log(err);
+            res.status(500).send(err.code);
+        } else {
+            if (dbres[0])
+                res.json(dbres[0]);
+            else
+                res.sendStatus(404);
+        }
+    });
 });
 
 app.get("/dashboard/:id", function (req, res) {
     res.query_result = false;
-    c.query("SELECT * FROM Customer WHERE CustomerId = " + c.escape(req.params.id))
-    .on('error', function(err) {
-        console.log(err);
-        res.status(500).send(err.message);
-    })
-    .on('result', function(customer_row) {
-        res.query_result = customer_row;
-        customer_row.Accounts = [];
-        c.query("SELECT * FROM Account WHERE CustomerId = " + c.escape(customer_row.CustomerId))
-        .on('result', function(account_row) {
-            customer_row.Accounts.push(account_row);
-        })
-        .on('end', function(info) {
-            res.json(res.query_result);
-        })
-    })
+    pool.query("SELECT * FROM Customer WHERE CustomerId = " + pool.escape(req.params.id), function (err, dbres) {
+        if (err) {
+            console.log(err);
+            res.status(500).send(err.code);
+        } else {
+            if (dbres[0]) {
+                res.query_result = dbres[0];
+                res.query_result.Accounts = [];
+                pool.query("SELECT * FROM Account WHERE CustomerId = " + pool.escape(res.query_result.CustomerId), function(err, dbres) {
+                    if (err) {
+                        console.log(err);
+                    } else {
+                        res.query_result.Accounts.push(dbres[0]);
+                        res.json(res.query_result);
+                    }
+                });
+            } else {
+                res.sendStatus(404);
+            }
+        }
+    });
 });
 
 function why_transfer_fail(req, res) {
-    c.query("SELECT Balance FROM Account WHERE AccountId = " + c.escape(req.query.f), function (err, rows) {
+    pool.query("SELECT Balance FROM Account WHERE AccountId = " + pool.escape(req.query.f), function (err, rows) {
         if (err) {
             console.log('pq_balance (will retry): ' + err.code);
             setTimeout(do_the_transfer, 1000, req, res);
@@ -213,20 +248,20 @@ function why_transfer_fail(req, res) {
             if (rows.length < 1 ) {
                 res.status(400).send('Source account missing: ' + req.query.f);
             } else if (rows[0].Balance < req.query.x) {
-                console.log('why_transfer_fail: insufficient funds');
+                // console.log('why_transfer_fail: insufficient funds');
                 if (!res.headersSent)
                     res.status(400).send('Insufficient funds on source account');
             } else {
                 // check that the destination account exists
-                c.query("SELECT * FROM Account WHERE AccountId = " + c.escape(req.query.t), function (err, rows) {
+                pool.query("SELECT * FROM Account WHERE AccountId = " + pool.escape(req.query.t), function (err, rows) {
                     if (err) {
-                        console.log('Retrying transfer ' + req.query);
+                        // console.log('Retrying transfer ' + req.query);
                         setTimeout(do_the_transfer, 1000, req, res);
                     } else {
                         if (rows.length !== 1) {
                             res.status(400).send('Destination account missing: ' + req.query.t);
                         } else {
-                            console.log('Retrying transfer ' + req.query);
+                            // console.log('Retrying transfer ' + inspect(req.query));
                             setTimeout(do_the_transfer, 1000, req, res);
                         }
                     }
@@ -237,18 +272,86 @@ function why_transfer_fail(req, res) {
 }
 
 function do_the_transfer(req, res) {
-    c.query("CALL AccountBalanceTransfer("+c.escape(req.query.f)+", "+c.escape(req.query.t)+", "+c.escape(req.query.x)+")", function (err, dbres) {
+    // console.log("do_the_transfer " + server_ip + ':' + listen_port + ' /transfer?f=' + req.query.f + '&t=' + req.query.t + '&x=' + req.query.x);
+    pool.getConnection(function(err, conn) {
         if (err) {
-            console.log('pq_transfer (will retry): ' + err.code);
+            console.log('pq_transfer:getConnection (will retry): ' + err.code);
             setTimeout(do_the_transfer, 1000, req, res);
         } else {
-            if (dbres[0][0].Success === 1) {
-                res.status(200).send('Transfer OK');
-            } else {
-                why_transfer_fail(req, res);
-            }
+            conn.query("CALL AccountBalanceTransfer("+pool.escape(req.query.f)+", "+pool.escape(req.query.t)+", "+pool.escape(req.query.x)+")", function (err, dbres) {
+                if (err) {
+                    console.log('do_the_transfer (will retry): ' + err.code);
+                    conn.release();
+                    setTimeout(do_the_transfer, 1000, req, res);
+                } else {
+                    if (dbres[0][0].Success) {
+                        conn.release();
+                        res.status(200).send('Transfer OK');
+                    } else {
+                        conn.release();
+                        setTimeout(why_transfer_fail, 100, req, res);
+                    }
+                }
+            });
         }
     });
+
+
+    /*
+    pool.getConnection(function(err, conn) {
+        if (err) {
+            console.log('pq_transfer:getConnection (will retry): ' + err.code);
+            setTimeout(do_the_transfer, 100, req, res);
+        } else {
+            conn.beginTransaction(function(err) {
+              if (err) {
+                  console.log('pq_transfer:beginTransaction (will retry): ' + err.code);
+                  conn.release(); setTimeout(do_the_transfer, 100, req, res);
+              } else {
+                  var fromId = pool.escape(req.query.f);
+                  var toId = pool.escape(req.query.t);
+                  var amount = pool.escape(req.query.x);
+
+                  var update_query_str =
+                          "    UPDATE Account SET Balance = Balance + (" +
+                          "      SELECT CASE " +
+                          "        WHEN AccountId = "+ fromId +
+                          "           THEN -" + amount +
+                          "           ELSE "+ amount +
+                          "        END" +
+                          "      )" +
+                          "    WHERE" +
+                          "      (AccountId = "+ fromId +" AND Balance - "+ amount +" >= 0)" +
+                          "      OR (AccountId = "+ toId +" AND Balance + "+ amount +" >= 0)"
+                          ;
+                  conn.query(update_query_str, function(err, dbres) {
+                      if (err) {
+                          console.log('pq_transfer:query (will retry): ' + err.code);
+                          conn.rollback(function() { conn.release(); setTimeout(do_the_transfer, 100, req, res); });
+                      } else {
+                          if (dbres.changedRows === 2) {
+                              // commit the transaction
+                              conn.commit(function(err) {
+                                if (err) {
+                                    if (err.code !== 'ER_LOCK_DEADLOCK')
+                                        console.log('pq_transfer:commit (will retry): ' + err.code);
+                                    conn.rollback(function() { conn.release(); setTimeout(do_the_transfer, 100, req, res); });
+                                } else {
+                                    conn.release();
+                                    res.status(200).send('Transfer OK');
+                                }
+                              });
+                          } else {
+                              console.log("/transfer affected " + dbres.changedRows + ", rolling back");
+                              conn.rollback(function() { conn.release(); why_transfer_fail(req, res); });
+                          }
+                      }
+                  });
+              }
+            });
+        }
+    });
+    */
 }
 
 app.get("/transfer", function (req, res) {
@@ -269,34 +372,10 @@ app.get("/transfer", function (req, res) {
     do_the_transfer(req, res);
 });
 
-app.get('/quit', function (req, res) {
-    res.send('Quitting.');
-    c.end();
-});
-
 app.get('/', function (req, res) {
+    console.log(inspect(req));
     res.send("Listening for queries\r\n");
 })
-
-
-function connect_to_db() {
-    /*
-    if (c.connected)
-        return;
-    c.connect(db_config);
-    c.on('error', function(err) {
-        console.log('Database connection failed, reconnecting: ' + err.message);
-        setTimeout(connect_to_db, 1000);
-    })
-    c.on('close', function(err) {
-        console.log('Database connection closed, reconnecting: ' + err);
-        setTimeout(connect_to_db, 1000);
-    })
-    .on('connect', function() {
-        console.log('Connected to database');
-    })
-    */
-}
 
 if (!module.parent) {
     var args = process.argv.slice(2);
@@ -307,7 +386,6 @@ if (!module.parent) {
         console.log('Using database config "' + db_config.user + ' @ unix:' + db_config.socketPath + '"');
     else
         console.log('Using database config "' + db_config.user + ' @ tcp:' + db_config.host + '"');
-    connect_to_db();
     console.log('Starting application on port ' + listen_port);
     app.listen(listen_port);
 }

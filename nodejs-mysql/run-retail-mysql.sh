@@ -1,6 +1,7 @@
 #!/bin/sh
 set -e
 killall nodejs || true
+rm nohup.out || true
 nohup nodejs retail-demo-mysql.js 3000 &
 nohup nodejs retail-demo-mysql.js 3001 &
 nohup nodejs retail-demo-mysql.js 3002 &

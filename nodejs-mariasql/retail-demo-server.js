@@ -22,6 +22,17 @@ var app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
+var os = require('os');
+var ifaces = os.networkInterfaces();
+var server_ip = '127.0.0.1';
+for (var dev in ifaces) {
+    ifaces[dev].forEach(function(details) {
+        if (details.family==='IPv4' && dev !== 'lo') {
+            server_ip = details.address;
+        }
+    });
+}
+
 function run_query(res, next_query, callback) {
     c.query(next_query)
     .on('error', function(err) {
@@ -62,17 +73,20 @@ function process_query_list(res, next_query) {
 app.get('/init', function (req, res) {
     res.query_list =
             [
-                "DROP TABLE IF EXISTS ClientStats",
                 "DROP TABLE IF EXISTS Account",
                 "DROP TABLE IF EXISTS Customer",
-
+                "DROP TABLE IF EXISTS ClientStats",
+                "CREATE TABLE IF NOT EXISTS ClientStats (SeqNo INT PRIMARY KEY AUTO_INCREMENT, Received TIMESTAMP, ServerIpPort VARCHAR(40), numFail INT, numOk INT, numReads INT, numWrites INT, INDEX ReceivedIndex (Received))",
                 "CREATE TABLE IF NOT EXISTS Customer (CustomerId INT PRIMARY KEY, FullName VARCHAR(32) NOT NULL, INDEX FullNameIndex (FullName))",
                 "CREATE TABLE IF NOT EXISTS Account (AccountId INT PRIMARY KEY, AccountType INT DEFAULT 0, Balance INT DEFAULT 0, CustomerId INT NOT NULL, FOREIGN KEY (CustomerId) REFERENCES Customer(CustomerId) ON DELETE CASCADE)",
-                "CREATE TABLE IF NOT EXISTS ClientStats (Received TIMESTAMP, ClientIp VARCHAR(32), NumFails INT, NumOk INT, PRIMARY KEY (Received, ClientIp))",
 
                 "DROP PROCEDURE IF EXISTS AccountBalanceTransfer",
                 "CREATE PROCEDURE AccountBalanceTransfer (fromId INT, toId INT, amount INT) NOT DETERMINISTIC MODIFIES SQL DATA SQL SECURITY DEFINER" +
                 "  BEGIN" +
+                "    DECLARE EXIT HANDLER FOR SQLEXCEPTION "+
+                "    BEGIN"+
+                "      SELECT 0 AS Success;" +
+                "    END;"+
                 "    START TRANSACTION;" +
                 "    UPDATE Account SET Balance = Balance + (" +
                 "      SELECT CASE " +
@@ -98,9 +112,15 @@ app.get('/init', function (req, res) {
     process_query_list(res, res.query_list.shift());
 });
 
-// /addstats?numFail=X&numOk=Y
+//  /addstats?numFail=X&numOk=Y&numReads=A&numWrites=B
 app.get("/addstats", function (req, res) {
-    c.query("INSERT INTO ClientStats VALUES (NOW(), ?, ?, ?)", [req.ip, parseInt(req.query.numFail), parseInt(req.query.numOk)], true)
+    c.query("INSERT INTO ClientStats VALUES (0, NOW(), '" +
+            c.escape(server_ip + ':' + listen_port) + "', " +
+            c.escape(req.query.numFail) + ", " +
+            c.escape(req.query.numOk) + ", " +
+            c.escape(req.query.numReads) + ", " +
+            c.escape(req.query.numWrites) +
+            ")")
     .on('error', function(err) {
         console.log(err);
         res.status(500).send(err.message);
@@ -248,13 +268,16 @@ function why_transfer_fail(req, res) {
             } else {
                 // check that the destination account exists
                 c.query('SELECT * FROM Account WHERE AccountId=?', [req.query.t])
-                .on('end', function(info) {
-                    if (info.numRows !== 1) {
-                        res.status(400).send('Destination account missing: ' + req.query.t);
-                    } else {
-                        console.log('Retrying transfer ' + req.query);
-                        setTimeout(do_the_transfer, 1000, req, res);
-                    }
+                .on('result', function(dbres) {
+                    dbres
+                    .on('end', function(info) {
+                        if (info.numRows !== 1) {
+                            res.status(400).send('Destination account missing: ' + req.query.t);
+                        } else {
+                            console.log('Retrying transfer ' + req.query);
+                            setTimeout(do_the_transfer, 1000, req, res);
+                        }
+                    })
                 })
             }
         })
