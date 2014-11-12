@@ -164,7 +164,6 @@ app.get("/serverAggregates", function (req, res) {
 
 
 app.post("/customers/:id", function (req, res) {
-    // console.log("Adding CustomerId " + pool.escape(req.params.id));
     res.query_list = ["INSERT INTO Customer VALUES (" + pool.escape(req.params.id) + ", " + pool.escape(req.body.FullName) + ")"];
     for (n in req.body.Accounts) {
         if (typeof req.body.Accounts[n].AccountType == 'undefined')
@@ -180,7 +179,6 @@ app.post("/customers/:id", function (req, res) {
                     ")");
     }
     res.query_results = [];
-    // console.log(inspect(res.query_list));
     process_query_list(res, res.query_list.shift());
 });
 
@@ -272,7 +270,6 @@ function why_transfer_fail(req, res) {
 }
 
 function do_the_transfer(req, res) {
-    // console.log("do_the_transfer " + server_ip + ':' + listen_port + ' /transfer?f=' + req.query.f + '&t=' + req.query.t + '&x=' + req.query.x);
     pool.getConnection(function(err, conn) {
         if (err) {
             console.log('pq_transfer:getConnection (will retry): ' + err.code);
@@ -295,63 +292,6 @@ function do_the_transfer(req, res) {
             });
         }
     });
-
-
-    /*
-    pool.getConnection(function(err, conn) {
-        if (err) {
-            console.log('pq_transfer:getConnection (will retry): ' + err.code);
-            setTimeout(do_the_transfer, 100, req, res);
-        } else {
-            conn.beginTransaction(function(err) {
-              if (err) {
-                  console.log('pq_transfer:beginTransaction (will retry): ' + err.code);
-                  conn.release(); setTimeout(do_the_transfer, 100, req, res);
-              } else {
-                  var fromId = pool.escape(req.query.f);
-                  var toId = pool.escape(req.query.t);
-                  var amount = pool.escape(req.query.x);
-
-                  var update_query_str =
-                          "    UPDATE Account SET Balance = Balance + (" +
-                          "      SELECT CASE " +
-                          "        WHEN AccountId = "+ fromId +
-                          "           THEN -" + amount +
-                          "           ELSE "+ amount +
-                          "        END" +
-                          "      )" +
-                          "    WHERE" +
-                          "      (AccountId = "+ fromId +" AND Balance - "+ amount +" >= 0)" +
-                          "      OR (AccountId = "+ toId +" AND Balance + "+ amount +" >= 0)"
-                          ;
-                  conn.query(update_query_str, function(err, dbres) {
-                      if (err) {
-                          console.log('pq_transfer:query (will retry): ' + err.code);
-                          conn.rollback(function() { conn.release(); setTimeout(do_the_transfer, 100, req, res); });
-                      } else {
-                          if (dbres.changedRows === 2) {
-                              // commit the transaction
-                              conn.commit(function(err) {
-                                if (err) {
-                                    if (err.code !== 'ER_LOCK_DEADLOCK')
-                                        console.log('pq_transfer:commit (will retry): ' + err.code);
-                                    conn.rollback(function() { conn.release(); setTimeout(do_the_transfer, 100, req, res); });
-                                } else {
-                                    conn.release();
-                                    res.status(200).send('Transfer OK');
-                                }
-                              });
-                          } else {
-                              console.log("/transfer affected " + dbres.changedRows + ", rolling back");
-                              conn.rollback(function() { conn.release(); why_transfer_fail(req, res); });
-                          }
-                      }
-                  });
-              }
-            });
-        }
-    });
-    */
 }
 
 app.get("/transfer", function (req, res) {
