@@ -1,7 +1,9 @@
 RetailDemo
 ==========
 
-Retail demo projects
+### Retail demo projects.
+
+This implements a very simple REST-ful API server and client. While simple, it still requires full database transaction support to function properly.
 
 `Starcounter` contains the server side implementation using Starcounter.
 
@@ -9,3 +11,10 @@ Retail demo projects
 
 `nodejs-mariasql` contains a server side implementation using nodejs and MariaDB/Galera. Due to an issue with the mariasql driver for nodejs, this is not usable for write tests with high load, as the driver fails when an error occurs while fetching query results (and there will be database deadlocks during high load).
 
+### Details on the MariaDB/Galera setup
+
+We used http://www.severalnines.com/ to create a small cluster of five machines on Amazon EC2. Each of the nodes was provisioned with an 8-core vCPU and 16GB of RAM and an EBS root volume and high network throughput. The dataset was quite small (500k Customer rows and 1500k Account rows), so the fairly low RAM was not an issue.
+
+On each node, we run 8 instances of the nodejs-mysql (or mariasql for read-only loads). Running with fewer instances of nodejs yields less throughput. The nodejs processes connect using Unix Domain sockets for maximum performance.
+
+We ran the cluster with 5, 3 and 1 Galera node to test how the cluster scales different load types with size. As expected, read loads scale almost perfectly and write loads scale negatively with cluster size due to Galera node replication. Best read performance was achieved using 5 Galera nodes using the asynchronous MariaDB driver. Best write performance (both 100% write and 5% write) was achieved using only one Galera node.
