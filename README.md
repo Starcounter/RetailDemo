@@ -29,11 +29,11 @@ For more details on how to set up the RetailDemo servers with MariaDB/Galera, se
 
 There are two modes the client can operate: using direct connections and using aggregated connections. 
 
-1. In direct connections mode, the client establishes HTTP socket connections to specified server endpoints (define by parameters -ServerIps and -ServerPorts). Each worker (communicates with one endpoint) creates a synchronous socket connection to endpoint,
+In direct connections mode, the client establishes HTTP socket connections to specified server endpoints (define by parameters -ServerIps and -ServerPorts). Each worker (communicates with one endpoint) creates a synchronous socket connection to endpoint,
 sends requests and receives responses. In our testing case we used a maximum number of 40 endpoints (5 nodes in cluster, each node had 8 NodeJs servers running on different ports). In our tests we used a maximum of 6 Retail clients with direct connections.
 However, the peak performance for MariaDb can be reached using only 3 clients (database performance is the limitation in this case).
 
-2. In aggregation mode numerous client connections are multiplexed into several "thick" connections that transform aggregated traffic. Aggregation clients accumulate and send traffic over few "thick" connections,
+In aggregation mode numerous client connections are multiplexed into several "thick" connections that transform aggregated traffic. Aggregation clients accumulate and send traffic over few "thick" connections,
 which are demultiplexed and processed on the server (Starcounter in our case). The reason for aggregation mode is simple:
 Windows performance of TCP/IP stack is limited to a maximum of 200 thousands (varies between machines) send/recv operations per second (RPS). So, in order, to saturate the server with higher load volumes, the
 traffic has to be aggregated into "thicker" sockets that resemble "virtual" connections. As an example, to saturate the server with 1 Million RPS, around 6 frontend aggregation machines should be used. RetailClient in aggregation mode
