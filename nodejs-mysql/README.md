@@ -4,7 +4,7 @@ You will need to have an account on Amazon EC2 and know how to use it, as well a
 
 If you haven't set up a Galera cluster before, you can read the tutorial at http://www.severalnines.com/resources/deploy-galera-replication-cluster-amazon-vpc, but keep in mind that we won't be needing the separate HTTP servers. For performance, we instead run nodejs directly on the nodes and have nodejs connect using Unix Domain sockets.
 
-The deployment script will take care of installation and configuration of the Galera nodes. The only tweak to the MySQL/MariaDB configuration was to increase the maximum number of concurrent database connections to 800. That is, we set the `my.cnf` for `max_connections` to 800.
+The deployment script will take care of installation and configuration of the Galera nodes. The only tweak to the MySQL/MariaDB configuration was to increase the maximum number of concurrent database connections to 800. That is, we changed `my.cnf`, setting `max_connections` to 800.
 
 Once the Galera cluster is up and running, copy `retail-demo-mysql.js` and `run-retail-mysql.sh` to each of the Galera nodes. Finally, run `run-retail-mysql.sh` on all of the nodes to spin up the nodejs processes. They will listen to HTTP requests on ports 3000 - 3007. Verify that they're running using `curl -v http://localhost:3000/`.
 
