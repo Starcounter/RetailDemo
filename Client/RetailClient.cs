@@ -43,7 +43,7 @@ namespace PokerDemoConsole {
 //         readonly public UInt16 ServerPorts = new UInt16[] { 3000 };
 //         readonly public Boolean UseAggregation = false;
 
-        readonly public Boolean DoAsyncNode = true;
+        readonly public Boolean DoAsyncNode = false;
         readonly public Int32 NumWorkersTotal = 1;
         readonly public Int32 NumWorkersPerServerEndpoint = 1;
 
@@ -339,6 +339,14 @@ namespace PokerDemoConsole {
         public String ServerIp;
         public UInt16 ServerPort;
 
+        public void IncrementOkResponses() {
+            Interlocked.Increment(ref NumTotalOkResponses);
+        }
+
+        public void IncrementFailResponses() {
+            Interlocked.Increment(ref NumTotalFailResponses);
+        }
+
         /// <summary>
         /// Increments some statistics.
         /// </summary>
@@ -477,9 +485,14 @@ namespace PokerDemoConsole {
             WorkerSettings ws = (WorkerSettings) userObject;
 
             if (resp.IsSuccessStatusCode) {
-                ws.NumTotalOkResponses++;
+
+                ws.IncrementOkResponses();
+
             } else {
-                ws.NumTotalFailResponses++;
+
+                //Console.WriteLine("Error: " + resp.Body);
+
+                ws.IncrementFailResponses();
             }
 
             ws.Irc.IncrementTotalNumResponses(1);
@@ -523,7 +536,26 @@ namespace PokerDemoConsole {
                             // Console.WriteLine("Request: " + UTF8Encoding.UTF8.GetString(reqData[i].DataBytes, 0, reqData[i].DataLength));
 
                             // Checking if we are using sync or async node calls.
-                            if (!globalSettings_.DoAsyncNode) {
+                            if (globalSettings_.DoAsyncNode) {
+
+                                // NOTE: Copying bytes since call is asynchronous and buffers can be reused immediately.
+                                Byte[] copyBytes = new Byte[reqData[i].DataLength];
+                                Buffer.BlockCopy(reqData[i].DataBytes, 0, copyBytes, 0, reqData[i].DataLength);
+
+                                // Performing call on this worker's node.
+                                node.DoRESTRequestAndGetResponse(
+                                    null,
+                                    null,
+                                    null,
+                                    null,
+                                    CheckResponsesForNode,
+                                    ws_,
+                                    Settings.DefaultTimeoutMs,
+                                    null,
+                                    copyBytes,
+                                    copyBytes.Length);
+
+                            } else {
 
                                 // Performing call on this worker's node.
                                 Response resp = node.DoRESTRequestAndGetResponse(
@@ -540,21 +572,6 @@ namespace PokerDemoConsole {
 
                                 // Checking for correct responses.
                                 CheckResponsesForNode(resp, ws_);
-
-                            } else {
-
-                                // Performing call on this worker's node.
-                                node.DoRESTRequestAndGetResponse(
-                                    null,
-                                    null,
-                                    null,
-                                    null,
-                                    CheckResponsesForNode,
-                                    ws_,
-                                    Settings.DefaultTimeoutMs,
-                                    null,
-                                    reqData[i].DataBytes,
-                                    reqData[i].DataLength);
                             }
 
                             totalNumSentRequests++;
@@ -938,7 +955,7 @@ SEND_DATA:
         /// <summary>
         /// Total number of responses.
         /// </summary>
-        Int32 totalNumResponses_ = 0;
+        volatile Int32 totalNumResponses_ = 0;
 
         /// <summary>
         /// Total number of requests.

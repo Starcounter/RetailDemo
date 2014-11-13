@@ -51,18 +51,11 @@ namespace ScRetailDemo {
                 if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "FullNameIndex").First == null)
                     Db.SQL("CREATE INDEX FullNameIndex ON Customer (FullName asc)");
 
-                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "CustomerIndex").First == null)
-                    Db.SQL("CREATE INDEX CustomerIndex ON Account (Customer, AccountId asc)");
-
-                try {
-                    //if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "Customer").First != null)
+                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "ScRetailDemo.Customer").First != null)
                     Db.SQL("DROP INDEX Auto ON Customer");
-                } catch { }
 
-                try {
-                    //if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "Account").First != null)
+                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "ScRetailDemo.Account").First != null)
                     Db.SQL("DROP INDEX Auto ON Account");
-                } catch { }
 
                 // https://github.com/Starcounter/Starcounter/issues/1602
                 Json.DirtyCheckEnabled = false;
