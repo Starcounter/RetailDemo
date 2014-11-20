@@ -330,21 +330,50 @@ namespace PokerDemoConsole {
         public IRequestsCreator Irc;
         public Int32 NumBodyCharacters;
         public CountdownEvent WaitForAllWorkersEvent;
-        public volatile Int32 NumTotalFailResponses;
-        public volatile Int32 NumTotalOkResponses;
-        public volatile Int32 NumTotalReads;
-        public volatile Int32 NumTotalWrites;
         public Int32 WorkersRPS;
         public Int32 ExitCode;
         public String ServerIp;
         public UInt16 ServerPort;
 
-        public void IncrementOkResponses() {
-            Interlocked.Increment(ref NumTotalOkResponses);
+        Int32 numTotalFailResponses_;
+        Int32 numTotalOkResponses_;
+        Int32 numTotalReads_;
+        Int32 numTotalWrites_;
+
+        public WorkerSettings() {
+
         }
 
-        public void IncrementFailResponses() {
-            Interlocked.Increment(ref NumTotalFailResponses);
+        public Int32 NumTotalOkResponses {
+            get {
+                return Interlocked.CompareExchange(ref numTotalOkResponses_, 0, -1);
+            }
+        }
+
+        public Int32 NumTotalFailResponses {
+            get {
+                return Interlocked.CompareExchange(ref numTotalFailResponses_, 0, -1);
+            }
+        }
+
+        public Int32 NumTotalReads {
+            get {
+                return Interlocked.CompareExchange(ref numTotalReads_, 0, -1);
+            }
+        }
+
+        public Int32 NumTotalWrites {
+            get {
+                return Interlocked.CompareExchange(ref numTotalWrites_, 0, -1);
+            }
+        }
+
+        public void AddToOkResponses(Int32 value) {
+            Interlocked.Add(ref numTotalOkResponses_, value);
+        }
+
+        public void AddToFailResponses(Int32 value) {
+            Interlocked.Add(ref numTotalFailResponses_, value);
         }
 
         /// <summary>
@@ -358,7 +387,7 @@ namespace PokerDemoConsole {
                 case RequestTypes.InsertCustomers:
                 case RequestTypes.TransferMoneyBetweenTwoAccounts: {
 
-                    NumTotalWrites++;
+                    numTotalWrites_++;
 
                     break;
                 }
@@ -367,7 +396,7 @@ namespace PokerDemoConsole {
                 case RequestTypes.GetCustomerByFullName:
                 case RequestTypes.GetCustomerById: {
 
-                    NumTotalReads++;
+                    numTotalReads_++;
 
                     break;
                 }
@@ -486,13 +515,13 @@ namespace PokerDemoConsole {
 
             if (resp.IsSuccessStatusCode) {
 
-                ws.IncrementOkResponses();
+                ws.AddToOkResponses(1);
 
             } else {
 
                 //Console.WriteLine("Error: " + resp.Body);
 
-                ws.IncrementFailResponses();
+                ws.AddToFailResponses(1);
             }
 
             ws.Irc.IncrementTotalNumResponses(1);
@@ -509,6 +538,8 @@ namespace PokerDemoConsole {
                 Console.WriteLine(String.Format("[{0}]: Starting worker for endpoint {1} : {2}...", workerId_, ws_.ServerIp, ws_.ServerPort));
 
                 Node node = new Node(ws_.ServerIp, ws_.ServerPort, 0, false);
+                node.ConnectSynchronuously = true;
+                node.MaxNumAsyncConnections = 32;
 
                 Int32 totalNumSentRequests = 0;
                 
@@ -838,8 +869,8 @@ SEND_DATA:
                     CheckResponses(recvBuf, numRecvBytes, out restartOffset, out numOkResponses, out numFailResponses, out numBodyBytes, out checksum);
 
                     // Incrementing counters.
-                    ws_.NumTotalOkResponses += numOkResponses;
-                    ws_.NumTotalFailResponses += numFailResponses;
+                    ws_.AddToOkResponses(numOkResponses);
+                    ws_.AddToFailResponses(numFailResponses);
                     rc.IncrementTotalNumResponses(numFailResponses + numOkResponses);
                     totalNumBodyBytes += numBodyBytes;
                     totalChecksum += checksum;
@@ -955,7 +986,7 @@ SEND_DATA:
         /// <summary>
         /// Total number of responses.
         /// </summary>
-        volatile Int32 totalNumResponses_ = 0;
+        Int32 totalNumResponses_ = 0;
 
         /// <summary>
         /// Total number of requests.
@@ -1232,7 +1263,8 @@ SEND_DATA:
         /// </summary>
         /// <returns></returns>
         public Boolean IsDone() {
-            return totalNumResponses_ == totalNumPlannedRequests_;
+            Int32 value = Interlocked.CompareExchange(ref totalNumResponses_, 0, -1);
+            return value == totalNumPlannedRequests_;
         }
     }
 
@@ -1611,10 +1643,6 @@ SEND_DATA:
                                 Irc = irc,
                                 NumBodyCharacters = 8,
                                 WaitForAllWorkersEvent = waitForAllWorkersEvent,
-                                NumTotalOkResponses = 0,
-                                NumTotalFailResponses = 0,
-                                NumTotalReads = 0,
-                                NumTotalWrites = 0,
                                 WorkersRPS = 0,
                                 ExitCode = 0,
                                 ServerIp = serverIp,
