@@ -37,7 +37,7 @@
   <ItemGroup>
     <Reference Include="Starcounter.ClientResolver, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL" />
     <Reference Include="Starcounter.Internal, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf, processorArchitecture=MSIL">
-      <Private>False</Private>
+      <Private>True</Private>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -60,12 +60,11 @@
       <Name>ScRetailDemo</Name>
     </ProjectReference>
     <Reference Include="Starcounter.XSON, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf">
-      <Private>False</Private>
+      <Private>True</Private>
     </Reference>
     <Reference Include="Starcounter.Node, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf">
-      <Private>False</Private>
+      <Private>True</Private>
     </Reference>
-    
     <None Include="Surnames.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -73,7 +72,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-  
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

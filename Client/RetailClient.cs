@@ -204,8 +204,21 @@ namespace PokerDemoConsole {
             }
 
             Console.WriteLine("NumWorkersPerServerEndpoint: " + NumWorkersPerServerEndpoint);
-            Console.WriteLine("ServerIps: " + ServerIps);
-            Console.WriteLine("ServerPorts: " + ServerPorts);
+
+            Console.Write("ServerIps: ");
+            foreach (String serverIp in ServerIps) {
+                Console.Write(serverIp);
+                Console.Write(",");
+            }
+            Console.WriteLine();
+
+            Console.Write("ServerPorts: ");
+            foreach (UInt16 serverPort in ServerPorts) {
+                Console.Write(serverPort);
+                Console.Write(",");
+            }
+            Console.WriteLine();
+
             Console.WriteLine("AggregationPort: " + AggregationPort);
             Console.WriteLine("UseAggregation: " + UseAggregation);
             Console.WriteLine("SendStatistics: " + SendStatistics);
@@ -242,21 +255,17 @@ namespace PokerDemoConsole {
         RequestTypes requestType_;
 
         /// <summary>
-        /// Pre-allocated bytes of maximum size where the request will sit.
+        /// Request object.
         /// </summary>
-        Byte[] dataBytes_;
-
-        /// <summary>
-        /// Number of bytes for request.
-        /// </summary>
-        Int32 dataLength_;
+        Request req_;
 
         /// <summary>
         /// Creating request data with maximum bytes.
         /// </summary>
         /// <param name="maxBytesNum"></param>
         public RequestData(Int32 maxBytesNum) {
-            dataBytes_ = new Byte[maxBytesNum];
+            req_ = new Request();
+            req_.RequestBytes = new Byte[maxBytesNum];
         }
 
         /// <summary>
@@ -265,25 +274,24 @@ namespace PokerDemoConsole {
         /// <param name="bytes"></param>
         /// <param name="numBytesToWrite"></param>
         public void WriteData(Byte[] bytes, Int32 numBytesToWrite) {
-            Buffer.BlockCopy(bytes, 0, dataBytes_, 0, numBytesToWrite);
-            dataLength_ = numBytesToWrite;
+
+            if (numBytesToWrite > req_.RequestBytes.Length)
+                throw new ArgumentException("Trying to write request buffer that is bigger than available.");
+
+            Buffer.BlockCopy(bytes, 0, req_.RequestBytes, 0, numBytesToWrite);
+            req_.RequestLength = numBytesToWrite;
         }
 
-        public Byte[] DataBytes {
-            get {
-                return dataBytes_;
-            }
+        /// <summary>
+        /// Request object.
+        /// </summary>
+        public Request RequestObj {
+            get { return req_; }
         }
 
-        public Int32 DataLength {
-            get {
-                return dataLength_;
-            }
-            set {
-                dataLength_ = value;
-            }
-        }
-
+        /// <summary>
+        /// Type of request.
+        /// </summary>
         public RequestTypes RequestType {
             get {
                 return requestType_;
@@ -570,8 +578,12 @@ namespace PokerDemoConsole {
                             if (globalSettings_.DoAsyncNode) {
 
                                 // NOTE: Copying bytes since call is asynchronous and buffers can be reused immediately.
-                                Byte[] copyBytes = new Byte[reqData[i].DataLength];
-                                Buffer.BlockCopy(reqData[i].DataBytes, 0, copyBytes, 0, reqData[i].DataLength);
+                                Byte[] copyBytes = new Byte[reqData[i].RequestObj.RequestLength];
+                                Buffer.BlockCopy(reqData[i].RequestObj.RequestBytes, 0, copyBytes, 0, reqData[i].RequestObj.RequestLength);
+
+                                Request req = new Request();
+                                req.RequestBytes = copyBytes;
+                                req.RequestLength = copyBytes.Length;
 
                                 // Performing call on this worker's node.
                                 node.DoRESTRequestAndGetResponse(
@@ -583,8 +595,7 @@ namespace PokerDemoConsole {
                                     ws_,
                                     Settings.DefaultTimeoutMs,
                                     null,
-                                    copyBytes,
-                                    copyBytes.Length);
+                                    req);
 
                             } else {
 
@@ -598,8 +609,7 @@ namespace PokerDemoConsole {
                                     null,
                                     Settings.DefaultTimeoutMs,
                                     null,
-                                    reqData[i].DataBytes,
-                                    reqData[i].DataLength);
+                                    reqData[i].RequestObj);
 
                                 // Checking for correct responses.
                                 CheckResponsesForNode(resp, ws_);
@@ -753,7 +763,7 @@ SEND_DATA:
 
                                 // Filling up whole buffer with echo requests.
                                 for (Int32 i = 0; i < reqData.Length; i++) {
-                                    reqData[i].WriteData(echoRequest_.CustomBytes, echoRequest_.CustomBytesLength);
+                                    reqData[i].WriteData(echoRequest_.RequestBytes, echoRequest_.RequestLength);
                                 }
 
                                 numRequestsToSend = reqData.Length;
@@ -769,7 +779,7 @@ SEND_DATA:
 
                                 // Filling up whole buffer with echo requests.
                                 for (Int32 i = 0; i < reqData.Length; i++) {
-                                    reqData[i].WriteData(gwRequest_.CustomBytes, gwRequest_.CustomBytesLength);
+                                    reqData[i].WriteData(gwRequest_.RequestBytes, gwRequest_.RequestLength);
                                 }
 
                                 numRequestsToSend = reqData.Length;
@@ -790,8 +800,8 @@ SEND_DATA:
                                     // Checking request type.
                                     ws_.IncrementStats(reqData[rn].RequestType);
 
-                                    Byte[] httpRequestBytes = reqData[rn].DataBytes;
-                                    Int32 httpRequestBytesLength = reqData[rn].DataLength;
+                                    Byte[] httpRequestBytes = reqData[rn].RequestObj.RequestBytes;
+                                    Int32 httpRequestBytesLength = reqData[rn].RequestObj.RequestLength;
 
                                     // Checking that we don't exceed the buffer size.
                                     if (offset + AggregationStructSizeBytes + httpRequestBytesLength >= sendBuf.Length) {
@@ -1249,7 +1259,7 @@ SEND_DATA:
                     }
                 }
 
-                requestsToFill[i].DataLength = r.ConstructFromFields(false, requestsToFill[i].DataBytes);
+                requestsToFill[i].RequestObj.RequestLength = r.ConstructFromFields(false, requestsToFill[i].RequestObj.RequestBytes);
                 requestsToFill[i].RequestType = rt;
 
                 offset++;
@@ -1449,7 +1459,7 @@ SEND_DATA:
                     }
                 }
 
-                reqData[n].WriteData(r.CustomBytes, r.CustomBytesLength);
+                reqData[n].WriteData(r.RequestBytes, r.RequestLength);
 
                 n++;
             }
