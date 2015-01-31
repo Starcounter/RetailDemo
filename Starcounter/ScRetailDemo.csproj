@@ -48,15 +48,19 @@
     </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="Starcounter, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf">
+      <HintPath>$(StarcounterBin)\Starcounter.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Starcounter.Internal, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf">
+      <HintPath>$(StarcounterBin)\Starcounter.Internal.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Starcounter.Node, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf">
+      <HintPath>$(StarcounterBin)\Starcounter.Node.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Starcounter.XSON, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf">
+      <HintPath>$(StarcounterBin)\Starcounter.XSON.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
