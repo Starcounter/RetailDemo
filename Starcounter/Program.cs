@@ -41,7 +41,17 @@ namespace ScRetailDemo {
             // Initializes the database state.
             Handle.GET("/init", () => {
 
+                // Removing existing objects from database.
+                Db.Transaction(() => {
+                    Db.SlowSQL("DELETE FROM Account");
+                    Db.SlowSQL("DELETE FROM Customer");
+                    Db.SlowSQL("DELETE FROM ClientStatsEntry");
+                });
+
                 // Creating all needed indexes.
+                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountCustomerIndex").First == null)
+                    Db.SQL("CREATE INDEX AccountCustomerIndex ON Account (Customer asc)");
+
                 if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountIdIndex").First == null)
                     Db.SQL("CREATE UNIQUE INDEX AccountIdIndex ON Account (AccountId asc)");
 
@@ -60,11 +70,6 @@ namespace ScRetailDemo {
                 // https://github.com/Starcounter/Starcounter/issues/1602
                 Json.DirtyCheckEnabled = false;
 
-                Db.Transaction(() => {
-                    Db.SlowSQL("DELETE FROM Account");
-                    Db.SlowSQL("DELETE FROM Customer");
-                    Db.SlowSQL("DELETE FROM ClientStatsEntry");
-                });
 
                 return 200;
             });
