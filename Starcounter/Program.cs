@@ -13,7 +13,7 @@ namespace ScRetailDemo {
             Handle.GET("/addstats?numFail={?}&numOk={?}&numReads={?}&numWrites={?}",
                 (Request req, String numFail, String numOk, String numReads, String numWrites) => {
 
-                Db.Transaction(() => {
+                Db.Transact(() => {
 
                     ClientStatsEntry cs = new ClientStatsEntry() {
                         Received = DateTime.Now.ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fff'Z'"),
@@ -42,7 +42,7 @@ namespace ScRetailDemo {
             Handle.GET("/init", () => {
 
                 // Removing existing objects from database.
-                Db.Transaction(() => {
+                Db.Transact(() => {
                     Db.SlowSQL("DELETE FROM Account");
                     Db.SlowSQL("DELETE FROM Customer");
                     Db.SlowSQL("DELETE FROM ClientStatsEntry");
@@ -103,7 +103,7 @@ namespace ScRetailDemo {
             });
 
             Handle.POST("/customers/{?}", (int customerId, CustomerAndAccountsJson json) => {
-                Db.Transaction(() => {
+                Db.Transact(() => {
                     var customer = new Customer { CustomerId = (int) json.CustomerId, FullName = json.FullName };
                     foreach (var a in json.Accounts) {
                         new Account {
@@ -128,7 +128,7 @@ namespace ScRetailDemo {
                     statusDescription = "Amount to transfer must be positive.";
                     statusCode = 400;
                 } else {
-                    Db.Transaction(() => {
+                    Db.Transact(() => {
 
                         Account source = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", fromId).First;
                         Account target = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", toId).First;
