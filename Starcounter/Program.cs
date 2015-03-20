@@ -67,10 +67,6 @@ namespace ScRetailDemo {
                 if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "ScRetailDemo.Account").First != null)
                     Db.SQL("DROP INDEX Auto ON Account");
 
-                // https://github.com/Starcounter/Starcounter/issues/1602
-                Json.DirtyCheckEnabled = false;
-
-
                 return 200;
             });
 
