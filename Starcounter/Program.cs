@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Collections.Generic;
 using Starcounter;
 using Starcounter.Internal;
@@ -30,6 +31,17 @@ namespace ScRetailDemo {
             });
 
             // Getting all clients statistics.
+            Handle.GET("/proxy", () =>
+            {
+                string result = "(null)";
+                // client is running on a third machine using 'wrk -t 10 -c 1000 http://192.168.60.186:8080/proxy'
+                // DNX minimal example using Kestrel frontend gets about 13000 req/sec
+                result = Http.GET<string>("http://192.168.60.169:80/"); // about 4000 req/sec
+                // result = new System.Net.WebClient().DownloadString("http://192.168.60.169:80/"); // about 11000 req/sec
+                return result;
+            });
+
+            // Getting all clients statistics.
             Handle.GET("/stats", () => {
 
                 var json = new ClientStatsJson();
@@ -42,11 +54,13 @@ namespace ScRetailDemo {
             Handle.GET("/init", () => {
 
                 // Removing existing objects from database.
-                Db.Transact(() => {
+                Db.Transact(() =>
+                {
                     Db.SlowSQL("DELETE FROM Account");
                     Db.SlowSQL("DELETE FROM Customer");
                     Db.SlowSQL("DELETE FROM ClientStatsEntry");
                 });
+               
 
                 // Creating all needed indexes.
                 if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountCustomerIndex").First == null)
