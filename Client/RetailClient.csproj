@@ -36,7 +36,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Starcounter.ClientResolver, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-        <HintPath>$(StarcounterBin)\Starcounter.ClientResolver.dll</HintPath>
+      <HintPath>$(StarcounterBin)\Starcounter.ClientResolver.dll</HintPath>
     </Reference>
     <Reference Include="Starcounter.Internal, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf, processorArchitecture=MSIL">
       <HintPath>$(StarcounterBin)\Starcounter.Internal.dll</HintPath>
@@ -64,10 +64,6 @@
     </ProjectReference>
     <Reference Include="Starcounter.XSON, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf">
       <HintPath>$(StarcounterBin)\Starcounter.XSON.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="Starcounter.Node, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf">
-      <HintPath>$(StarcounterBin)\Starcounter.Node.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <None Include="Surnames.txt">
