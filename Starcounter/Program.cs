@@ -11,7 +11,7 @@ namespace ScRetailDemo {
         static void Main() {
 
             // Handler that adds statistics from client.
-            Handle.GET("/addstats?numFail={?}&numOk={?}&numReads={?}&numWrites={?}",
+            Handle.GET("/ScRetailDemo/addstats?numFail={?}&numOk={?}&numReads={?}&numWrites={?}",
                 (Request req, String numFail, String numOk, String numReads, String numWrites) => {
 
                 Db.Transact(() => {
@@ -31,7 +31,7 @@ namespace ScRetailDemo {
             });
 
             // Getting all clients statistics.
-            Handle.GET("/proxy", () =>
+            Handle.GET("/ScRetailDemo/proxy", () =>
             {
                 string result = "(null)";
                 // client is running on a third machine using 'wrk -t 10 -c 1000 http://192.168.60.186:8080/proxy'
@@ -42,7 +42,7 @@ namespace ScRetailDemo {
             });
 
             // Getting all clients statistics.
-            Handle.GET("/stats", () => {
+            Handle.GET("/ScRetailDemo/stats", () => {
 
                 var json = new ClientStatsJson();
                 json.AllClientStats = Db.SQL("SELECT s FROM ClientStatsEntry s");
@@ -51,32 +51,30 @@ namespace ScRetailDemo {
             });
 
             // Initializes the database state.
-            Handle.GET("/init", () => {
+            Handle.GET("/ScRetailDemo/init", () => {
 
                 // Removing existing objects from database.
-                Db.Transact(() =>
-                {
+                Db.Transact(() => {
                     Db.SlowSQL("DELETE FROM Account");
-                    Db.SlowSQL("DELETE FROM Customer");
+                    Db.SlowSQL("DELETE FROM RetailCustomer");
                     Db.SlowSQL("DELETE FROM ClientStatsEntry");
                 });
-               
 
                 // Creating all needed indexes.
                 if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountCustomerIndex").First == null)
-                    Db.SQL("CREATE INDEX AccountCustomerIndex ON Account (Customer asc)");
+                    Db.SQL("CREATE INDEX AccountCustomerIndex ON Account (RetailCustomer asc)");
 
                 if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountIdIndex").First == null)
                     Db.SQL("CREATE UNIQUE INDEX AccountIdIndex ON Account (AccountId asc)");
 
                 if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "CustomerIdIndex").First == null)
-                    Db.SQL("CREATE UNIQUE INDEX CustomerIdIndex ON Customer (CustomerId asc)");
+                    Db.SQL("CREATE UNIQUE INDEX CustomerIdIndex ON RetailCustomer (CustomerId asc)");
 
                 if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "FullNameIndex").First == null)
-                    Db.SQL("CREATE INDEX FullNameIndex ON Customer (FullName asc)");
+                    Db.SQL("CREATE INDEX FullNameIndex ON RetailCustomer (FullName asc)");
 
-                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "ScRetailDemo.Customer").First != null)
-                    Db.SQL("DROP INDEX Auto ON Customer");
+                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "ScRetailDemo.RetailCustomer").First != null)
+                    Db.SQL("DROP INDEX Auto ON RetailCustomer");
 
                 if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "ScRetailDemo.Account").First != null)
                     Db.SQL("DROP INDEX Auto ON Account");
@@ -84,7 +82,7 @@ namespace ScRetailDemo {
                 return 200;
             });
 
-            Handle.GET("/serverAggregates", () => {
+            Handle.GET("/ScRetailDemo/serverAggregates", () => {
                 ThreadHelper.SetYieldBlock();
                 try {
                     return "AccountBalanceTotal=" + Db.SlowSQL<Int64>("SELECT SUM (a.Balance) FROM Account a").First;
@@ -94,39 +92,39 @@ namespace ScRetailDemo {
                 }
             });
 
-            Handle.GET("/customers/{?}", (int customerId) => {
+            Handle.GET("/ScRetailDemo/customers/{?}", (int customerId) => {
                 var json = new CustomerJson();
-                json.Data = Db.SQL("SELECT p FROM Customer p WHERE CustomerId = ?", customerId).First;
+                json.Data = Db.SQL("SELECT p FROM RetailCustomer p WHERE CustomerId = ?", customerId).First;
                 return json.ToJsonUtf8();
             });
 
-            Handle.GET("/dashboard/{?}", (int customerId) => {
+            Handle.GET("/ScRetailDemo/dashboard/{?}", (int customerId) => {
                 var json = new CustomerAndAccountsJson();
-                json.Data = Db.SQL("SELECT p FROM Customer p WHERE CustomerId = ?", customerId).First;
+                json.Data = Db.SQL("SELECT p FROM RetailCustomer p WHERE CustomerId = ?", customerId).First;
                 return json.ToJsonUtf8();
             });
 
-            Handle.GET("/customers?f={?}", (string fullName) => {
+            Handle.GET("/ScRetailDemo/customers?f={?}", (string fullName) => {
                 var json = new CustomerJson();
-                json.Data = Db.SQL("SELECT p FROM Customer p WHERE FullName = ?", fullName).First;
+                json.Data = Db.SQL("SELECT p FROM RetailCustomer p WHERE FullName = ?", fullName).First;
                 return json.ToJsonUtf8();
             });
 
-            Handle.POST("/customers/{?}", (int customerId, CustomerAndAccountsJson json) => {
+            Handle.POST("/ScRetailDemo/customers/{?}", (int customerId, CustomerAndAccountsJson json) => {
                 Db.Transact(() => {
-                    var customer = new Customer { CustomerId = (int) json.CustomerId, FullName = json.FullName };
+                    var customer = new RetailCustomer { CustomerId = (int)json.CustomerId, FullName = json.FullName };
                     foreach (var a in json.Accounts) {
                         new Account {
                             AccountId = (int) a.AccountId,
                             Balance = (int) a.Balance,
-                            Customer = customer
+                            RetailCustomer = customer
                         };
                     }
                 });
                 return 201;
             });
 
-            Handle.GET("/transfer?f={?}&t={?}&x={?}", (int fromId, int toId, int amount) => {
+            Handle.GET("/ScRetailDemo/transfer?f={?}&t={?}&x={?}", (int fromId, int toId, int amount) => {
 
                 ushort statusCode = 0;
                 String statusDescription = null;
@@ -181,16 +179,16 @@ namespace ScRetailDemo {
     }
 
     [Database]
-    public class Customer { // Represents a customer with an account.
+    public class RetailCustomer { // Represents a customer with an account.
         public int CustomerId; // Public identifier.
-        public string FullName; // Customer's name.
-        public IEnumerable<Account> Accounts { get { return Db.SQL<Account>("SELECT a FROM Account a WHERE a.Customer=?", this); } }
+        public string FullName; // RetailCustomer's name.
+        public IEnumerable<Account> Accounts { get { return Db.SQL<Account>("SELECT a FROM Account a WHERE a.RetailCustomer=?", this); } }
     }
 
     [Database]
     public class Account { // Represents an account for a specific customer.
         public int AccountId; // Public identifier.
         public int Balance; // Money balance in account.
-        public Customer Customer; // To which customer this account belongs.
+        public RetailCustomer RetailCustomer; // To which customer this account belongs.
     }
 }

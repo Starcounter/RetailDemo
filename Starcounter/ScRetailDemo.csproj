@@ -55,8 +55,8 @@
       <HintPath>$(StarcounterBin)\Starcounter.Internal.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Starcounter.Node, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf">
-      <HintPath>$(StarcounterBin)\Starcounter.Node.dll</HintPath>
+    <Reference Include="Starcounter.Extensions">
+      <HintPath>$(StarcounterBin)\Public Assemblies\Starcounter.Extensions.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Starcounter.XSON, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf">

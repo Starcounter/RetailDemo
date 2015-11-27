@@ -1116,7 +1116,7 @@ SEND_DATA:
                 customers_[i].CustomerId = customersAndAccountsIds[curIdIndex];
                 curIdIndex++;
 
-                customers_[i].FullName = allNames[rand0_.Next(allNames.Length)] + allSurnames[rand0_.Next(allSurnames.Length)];
+                customers_[i].FullName = allNames[rand0_.Next(allNames.Length)] + " " + allSurnames[rand0_.Next(allSurnames.Length)];
 
                 Int32 numAccounts = 1 + rand0_.Next(Settings.MaxAccountsPerCustomer);
                 totalAccountsNum += numAccounts;
@@ -1208,7 +1208,7 @@ SEND_DATA:
                     case RequestTypes.InsertCustomers: {
 
                         r.Method = "POST";
-                        r.Uri = "/customers/" + customers_[offset].CustomerId;
+                        r.Uri = "/ScRetailDemo/customers/" + customers_[offset].CustomerId;
                         r.ContentType = "application/json";
                         r.BodyBytes = customers_[offset].ToJsonUtf8();
 
@@ -1223,7 +1223,7 @@ SEND_DATA:
                         Int32 amountToTransfer = rand.Next(1, Settings.MaxTransferAmount);
 
                         r.Method = "GET";
-                        r.Uri = "/transfer?f=" + c1.Accounts[rand.Next(c1.Accounts.Count)].AccountId +
+                        r.Uri = "/ScRetailDemo/transfer?f=" + c1.Accounts[rand.Next(c1.Accounts.Count)].AccountId +
                             "&t=" + c2.Accounts[rand.Next(c2.Accounts.Count)].AccountId +
                             "&x=" + amountToTransfer;
 
@@ -1233,7 +1233,7 @@ SEND_DATA:
                     case RequestTypes.GetCustomerAndAccounts: {
 
                         r.Method = "GET";
-                        r.Uri = "/dashboard/" + c.CustomerId;
+                        r.Uri = "/ScRetailDemo/dashboard/" + c.CustomerId;
 
                         break;
                     }
@@ -1241,7 +1241,7 @@ SEND_DATA:
                     case RequestTypes.GetCustomerById: {
 
                         r.Method = "GET";
-                        r.Uri = "/customers/" + c.CustomerId;
+                        r.Uri = "/ScRetailDemo/customers/" + c.CustomerId;
 
                         break;
                     }
@@ -1249,7 +1249,7 @@ SEND_DATA:
                     case RequestTypes.GetCustomerByFullName: {
 
                         r.Method = "GET";
-                        r.Uri = "/customers?f=" + c.FullName;
+                        r.Uri = "/ScRetailDemo/customers?f=" + c.FullName;
 
                         break;
                     }
@@ -1560,7 +1560,7 @@ SEND_DATA:
             lastTotalNumWrites_ = totalNumWrites;
 
             // Creating stats URL.
-            String statsUri = String.Format("/addstats?numFail={0}&numOk={1}&numReads={2}&numWrites={3}",
+            String statsUri = String.Format("/ScRetailDemo/addstats?numFail={0}&numOk={1}&numReads={2}&numWrites={3}",
                 numFailResponses,
                 numOkResponses,
                 numReads,
@@ -1673,7 +1673,7 @@ SEND_DATA:
                 if (settings.Inserting) {
 
                     timer.Restart();
-                    nodeResp = nodeClient.GET("/init");
+                    nodeResp = nodeClient.GET("/ScRetailDemo/init");
                     timer.Stop();
 
                     if (!nodeResp.IsSuccessStatusCode) {
