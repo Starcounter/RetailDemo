@@ -10,7 +10,6 @@ SET DB_NAME=default
 
 :: Killing existing processes.
 "%StarcounterBin%/staradmin.exe" kill all
-IF EXIST "%SC_CHECKOUT_DIR%/RetailDemo" rd /q /s "%SC_CHECKOUT_DIR%/RetailDemo"
 
 :: Starting the host to be able to delete database.
 
