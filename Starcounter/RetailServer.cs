@@ -16,7 +16,7 @@ namespace ScRetailDemo {
 
                 Db.Transact(() => {
 
-                    ClientStatsEntry cs = new ClientStatsEntry() {
+                    RetailClientStatsDb entry = new RetailClientStatsDb() {
                         Received = DateTime.Now.ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fff'Z'"),
                         ClientIp = req.ClientIpAddress.ToString(),
                         NumFail = numFail,
@@ -44,8 +44,8 @@ namespace ScRetailDemo {
             // Getting all clients statistics.
             Handle.GET("/ScRetailDemo/stats", () => {
 
-                var json = new ClientStatsJson();
-                json.AllClientStats = Db.SQL("SELECT s FROM ClientStatsEntry s");
+                var json = new RetailClientStatsJson();
+                json.AllClientStats = Db.SQL("SELECT s FROM RetailClientStatsDb s");
 
                 return new Response() { BodyBytes = json.ToJsonUtf8() };
             });
@@ -57,7 +57,7 @@ namespace ScRetailDemo {
                 Db.Transact(() => {
                     Db.SlowSQL("DELETE FROM Account");
                     Db.SlowSQL("DELETE FROM RetailCustomer");
-                    Db.SlowSQL("DELETE FROM ClientStatsEntry");
+                    Db.SlowSQL("DELETE FROM RetailClientStatsDb");
                 });
 
                 // Creating all needed indexes.
@@ -169,7 +169,7 @@ namespace ScRetailDemo {
     }
 
     [Database]
-    public class ClientStatsEntry { // Statistics entry from the client.
+    public class RetailClientStatsDb { // Statistics entry from the client.
         public String Received; // Datetime when statistics received.
         public String ClientIp; // Client IP address.
         public String NumFail; // Number of failed responses since last report.

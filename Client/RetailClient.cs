@@ -515,27 +515,6 @@ namespace PokerDemoConsole {
         }
 
         /// <summary>
-        /// Checking responses on node call.
-        /// </summary>
-        static void CheckResponsesForNode(Response resp, Object userObject) {
-
-            WorkerSettings ws = (WorkerSettings) userObject;
-
-            if (resp.IsSuccessStatusCode) {
-
-                ws.AddToOkResponses(1);
-
-            } else {
-
-                //Console.WriteLine("Error: " + resp.Body);
-
-                ws.AddToFailResponses(1);
-            }
-
-            ws.Irc.IncrementTotalNumResponses(1);
-        }
-
-        /// <summary>
         /// No aggregation worker routine.
         /// </summary>
         /// <param name="rc"></param>
@@ -545,7 +524,7 @@ namespace PokerDemoConsole {
 
                 Console.WriteLine(String.Format("[{0}]: Starting worker for endpoint {1} : {2}...", workerId_, ws_.ServerIp, ws_.ServerPort));
 
-                Node node = new Node(ws_.ServerIp, ws_.ServerPort, 0, false);
+                Node node = new Node(ws_.ServerIp, ws_.ServerPort);
                 node.ConnectSynchronuously = true;
                 node.MaxNumAsyncConnections = 32;
 
@@ -557,6 +536,19 @@ namespace PokerDemoConsole {
                 for (Int32 i = 0; i < numRequestsInSingleSend; i++) {
                     reqData[i] = new RequestData(1024);
                 }
+
+                // Procedure to check the response correctness.
+                Action<Response> checkResponse = (Response resp) => {
+
+                    if (resp.IsSuccessStatusCode) {
+                        ws_.AddToOkResponses(1);
+                    } else {
+                        //Console.WriteLine("Error: " + resp.Body);
+                        ws_.AddToFailResponses(1);
+                    }
+
+                    ws_.Irc.IncrementTotalNumResponses(1);
+                };
 
                 Stopwatch timer = Stopwatch.StartNew();
 
@@ -591,8 +583,7 @@ namespace PokerDemoConsole {
                                     null,
                                     null,
                                     null,
-                                    CheckResponsesForNode,
-                                    ws_,
+                                    checkResponse,
                                     Settings.DefaultTimeoutMs,
                                     null,
                                     req);
@@ -606,13 +597,12 @@ namespace PokerDemoConsole {
                                     null,
                                     null,
                                     null,
-                                    null,
                                     Settings.DefaultTimeoutMs,
                                     null,
                                     reqData[i].RequestObj);
 
                                 // Checking for correct responses.
-                                CheckResponsesForNode(resp, ws_);
+                                checkResponse(resp);
                             }
 
                             totalNumSentRequests++;
@@ -1116,7 +1106,7 @@ SEND_DATA:
                 customers_[i].CustomerId = customersAndAccountsIds[curIdIndex];
                 curIdIndex++;
 
-                customers_[i].FullName = allNames[rand0_.Next(allNames.Length)] + " " + allSurnames[rand0_.Next(allSurnames.Length)];
+                customers_[i].FullName = allNames[rand0_.Next(allNames.Length)] + "-" + allSurnames[rand0_.Next(allSurnames.Length)];
 
                 Int32 numAccounts = 1 + rand0_.Next(Settings.MaxAccountsPerCustomer);
                 totalAccountsNum += numAccounts;
