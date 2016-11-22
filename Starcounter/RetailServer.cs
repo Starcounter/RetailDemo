@@ -61,23 +61,17 @@ namespace ScRetailDemo {
                 });
 
                 // Creating all needed indexes.
-                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountCustomerIndex").First == null)
+                if (Db.SQL("SELECT i FROM Starcounter.Metadata.\"Index\" i WHERE i.Name = ?", "AccountCustomerIndex").First == null)
                     Db.SQL("CREATE INDEX AccountCustomerIndex ON Account (RetailCustomer asc)");
 
-                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "AccountIdIndex").First == null)
+                if (Db.SQL("SELECT i FROM Starcounter.Metadata.\"Index\" i WHERE i.Name = ?", "AccountIdIndex").First == null)
                     Db.SQL("CREATE UNIQUE INDEX AccountIdIndex ON Account (AccountId asc)");
 
-                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "CustomerIdIndex").First == null)
+                if (Db.SQL("SELECT i FROM Starcounter.Metadata.\"Index\" i WHERE i.Name = ?", "CustomerIdIndex").First == null)
                     Db.SQL("CREATE UNIQUE INDEX CustomerIdIndex ON RetailCustomer (CustomerId asc)");
 
-                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ?", "FullNameIndex").First == null)
+                if (Db.SQL("SELECT i FROM Starcounter.Metadata.\"Index\" i WHERE i.Name = ?", "FullNameIndex").First == null)
                     Db.SQL("CREATE INDEX FullNameIndex ON RetailCustomer (FullName asc)");
-
-                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "ScRetailDemo.RetailCustomer").First != null)
-                    Db.SQL("DROP INDEX Auto ON RetailCustomer");
-
-                if (Db.SQL("SELECT i FROM MaterializedIndex i WHERE Name = ? AND \"Table\".Name = ?", "Auto", "ScRetailDemo.Account").First != null)
-                    Db.SQL("DROP INDEX Auto ON Account");
 
                 return 200;
             });
