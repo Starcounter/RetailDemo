@@ -53,19 +53,19 @@ IF ERRORLEVEL 1 GOTO FAILED
 :: Using asyncronous Node.
 
 ECHO Inserting %NumberOfCustomers% objects using asyncronous node and %NumberOfWorkers% workers.
-%RetailClientExe% -Inserting=True -DoAsyncNode=True -NumCustomers=%NumberOfCustomers% -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=0 -NumGetCustomerByFullName=0  -NumWorkersPerServerEndpoint=%NumberOfWorkers%
+%RetailClientExe% -Inserting=True -NumCustomers=%NumberOfCustomers% -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=0 -NumGetCustomerByFullName=0  -NumWorkersPerServerEndpoint=%NumberOfWorkers%
 IF ERRORLEVEL 1 GOTO FAILED
 
 ECHO Getting customers by ID using asyncronous Node.
-%RetailClientExe% -DoAsyncNode=True -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=%NumberOfOperations% -NumGetCustomerByFullName=0
+%RetailClientExe% -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=%NumberOfOperations% -NumGetCustomerByFullName=0
 IF ERRORLEVEL 1 GOTO FAILED
 
 ECHO Transfering money between accounts using asyncronous Node.
-%RetailClientExe% -DoAsyncNode=True -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=%NumberOfOperations% -NumGetCustomerAndAccounts=0 -NumGetCustomerById=0 -NumGetCustomerByFullName=0
+%RetailClientExe% -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=%NumberOfOperations% -NumGetCustomerAndAccounts=0 -NumGetCustomerById=0 -NumGetCustomerByFullName=0
 IF ERRORLEVEL 1 GOTO FAILED
 
 ECHO Mixed transactions using asyncronous Node.
-%RetailClientExe% -DoAsyncNode=True -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=%NumberOfOperations% -NumGetCustomerAndAccounts=%NumberOfOperations% -NumGetCustomerById=%NumberOfOperations% -NumGetCustomerByFullName=%NumberOfOperations%
+%RetailClientExe% -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=%NumberOfOperations% -NumGetCustomerAndAccounts=%NumberOfOperations% -NumGetCustomerById=%NumberOfOperations% -NumGetCustomerByFullName=%NumberOfOperations%
 IF ERRORLEVEL 1 GOTO FAILED
 
 

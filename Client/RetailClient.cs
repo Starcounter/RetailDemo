@@ -43,7 +43,6 @@ namespace PokerDemoConsole {
 //         readonly public UInt16 ServerPorts = new UInt16[] { 3000 };
 //         readonly public Boolean UseAggregation = false;
 
-        readonly public Boolean DoAsyncNode = false;
         readonly public Int32 NumWorkersTotal = 1;
         readonly public Int32 NumWorkersPerServerEndpoint = 1;
 
@@ -108,7 +107,6 @@ namespace PokerDemoConsole {
                     Console.WriteLine("-ServerPorts=8080;8081");
                     Console.WriteLine("-AggregationPort=9191");
                     Console.WriteLine("-UseAggregation=True");
-                    Console.WriteLine("-DoAsyncNode=True");
                     Console.WriteLine("-SendStatistics=True");
 
                     Console.WriteLine("-NumTestRequestsEachWorker=5000000");
@@ -154,9 +152,6 @@ namespace PokerDemoConsole {
 
                 } else if (arg.StartsWith("-UseAggregation=")) {
                     UseAggregation = Boolean.Parse(arg.Substring("-UseAggregation=".Length));
-
-                } else if (arg.StartsWith("-DoAsyncNode=")) {
-                    DoAsyncNode = Boolean.Parse(arg.Substring("-DoAsyncNode=".Length));
 
                 } else if (arg.StartsWith("-NumTestRequestsEachWorker=")) {
                     NumTestRequestsEachWorker = Int32.Parse(arg.Substring("-NumTestRequestsEachWorker=".Length));
@@ -222,7 +217,6 @@ namespace PokerDemoConsole {
             Console.WriteLine("AggregationPort: " + AggregationPort);
             Console.WriteLine("UseAggregation: " + UseAggregation);
             Console.WriteLine("SendStatistics: " + SendStatistics);
-            Console.WriteLine("DoAsyncNode: " + DoAsyncNode);
             
             Console.WriteLine("TestType: " + TestType);
             Console.WriteLine("NumTestRequestsEachWorker: " + NumTestRequestsEachWorker);
@@ -566,44 +560,24 @@ namespace PokerDemoConsole {
 
                             // Console.WriteLine("Request: " + UTF8Encoding.UTF8.GetString(reqData[i].DataBytes, 0, reqData[i].DataLength));
 
-                            // Checking if we are using sync or async node calls.
-                            if (globalSettings_.DoAsyncNode) {
+                            // NOTE: Copying bytes since call is asynchronous and buffers can be reused immediately.
+                            Byte[] copyBytes = new Byte[reqData[i].RequestObj.RequestLength];
+                            Buffer.BlockCopy(reqData[i].RequestObj.RequestBytes, 0, copyBytes, 0, reqData[i].RequestObj.RequestLength);
 
-                                // NOTE: Copying bytes since call is asynchronous and buffers can be reused immediately.
-                                Byte[] copyBytes = new Byte[reqData[i].RequestObj.RequestLength];
-                                Buffer.BlockCopy(reqData[i].RequestObj.RequestBytes, 0, copyBytes, 0, reqData[i].RequestObj.RequestLength);
+                            Request req = new Request();
+                            req.RequestBytes = copyBytes;
+                            req.RequestLength = copyBytes.Length;
 
-                                Request req = new Request();
-                                req.RequestBytes = copyBytes;
-                                req.RequestLength = copyBytes.Length;
-
-                                // Performing call on this worker's node.
-                                node.DoRESTRequestAndGetResponse(
-                                    null,
-                                    null,
-                                    null,
-                                    null,
-                                    checkResponse,
-                                    Settings.DefaultTimeoutMs,
-                                    null,
-                                    req);
-
-                            } else {
-
-                                // Performing call on this worker's node.
-                                Response resp = node.DoRESTRequestAndGetResponse(
-                                    null,
-                                    null,
-                                    null,
-                                    null,
-                                    null,
-                                    Settings.DefaultTimeoutMs,
-                                    null,
-                                    reqData[i].RequestObj);
-
-                                // Checking for correct responses.
-                                checkResponse(resp);
-                            }
+                            // Performing call on this worker's node.
+                            node.DoRESTRequestAndGetResponse(
+                                null,
+                                null,
+                                null,
+                                null,
+                                checkResponse,
+                                Settings.DefaultTimeoutMs,
+                                null,
+                                req);
 
                             totalNumSentRequests++;
                         }
