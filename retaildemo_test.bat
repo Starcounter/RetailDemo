@@ -1,3 +1,5 @@
+IF "%Configuration%"=="" set Configuration=%1
+
 SET RetailClientExe=Client\bin\%Configuration%\RetailClient.exe
 SET RetailServerExe=Starcounter\bin\%Configuration%\ScRetailDemo.exe
 
