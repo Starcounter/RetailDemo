@@ -118,10 +118,11 @@ namespace ScRetailDemo {
                 return 201;
             });
 
-            Handle.GET("/ScRetailDemo/transfer?f={?}&t={?}&x={?}", (int fromId, int toId, int amount) => {
+            Handle.GET("/ScRetailDemo/transfer?f={?}&t={?}&x={?}", (Request r, int fromId, int toId, int amount) => {
 
                 ushort statusCode = 0;
                 String statusDescription = null;
+                var s = Starcounter.Internal.StarcounterEnvironment.CurrentSchedulerId;
 
                 if (fromId == toId) {
                     statusDescription = "Giving money to yourself is redundant.";
@@ -130,28 +131,48 @@ namespace ScRetailDemo {
                     statusDescription = "Amount to transfer must be positive.";
                     statusCode = 400;
                 } else {
-                    Db.Transact(() => {
+                    Db.TransactAsync(() =>
+                    {
 
                         Account source = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", fromId).First;
                         Account target = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", toId).First;
 
-                        if (source == null) {
+                        if (source == null)
+                        {
                             statusDescription = "Source account does not exist.";
                             statusCode = 400;
-                        } else if (target == null) {
+                        }
+                        else if (target == null)
+                        {
                             statusDescription = "Target account does not exist.";
                             statusCode = 400;
-                        } else if (source.Balance < amount) {
+                        }
+                        else if (source.Balance < amount)
+                        {
                             statusDescription = "Insufficient funds on source account.";
                             statusCode = 400;
-                        } else {
+                        }
+                        else
+                        {
                             source.Balance -= amount;
                             target.Balance += amount;
 
                             statusDescription = "Transfer OK.";
                             statusCode = 200;
                         }
+                    }).ContinueWith((_) =>
+                    {
+                        Starcounter.Scheduling.ScheduleTask(
+                       () =>
+                       r.SendResponse(new Response
+                       {
+                           StatusDescription = statusDescription,
+                           StatusCode = statusCode
+                       }, null), false, s);
                     });
+
+                    return HandlerStatus.Handled;
+
                 }
 
                 return new Response() { 
