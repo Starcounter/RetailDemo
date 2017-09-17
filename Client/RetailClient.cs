@@ -252,35 +252,13 @@ namespace PokerDemoConsole {
         /// Request object.
         /// </summary>
         Request req_;
-
-        /// <summary>
-        /// Creating request data with maximum bytes.
-        /// </summary>
-        /// <param name="maxBytesNum"></param>
-        public RequestData(Int32 maxBytesNum) {
-            req_ = new Request();
-            req_.RequestBytes = new Byte[maxBytesNum];
-        }
-
-        /// <summary>
-        /// Writing request data to array.
-        /// </summary>
-        /// <param name="bytes"></param>
-        /// <param name="numBytesToWrite"></param>
-        public void WriteData(Byte[] bytes, Int32 numBytesToWrite) {
-
-            if (numBytesToWrite > req_.RequestBytes.Length)
-                throw new ArgumentException("Trying to write request buffer that is bigger than available.");
-
-            Buffer.BlockCopy(bytes, 0, req_.RequestBytes, 0, numBytesToWrite);
-            req_.RequestLength = numBytesToWrite;
-        }
-
+        
         /// <summary>
         /// Request object.
         /// </summary>
         public Request RequestObj {
             get { return req_; }
+            set { req_ = value; }
         }
 
         /// <summary>
@@ -524,7 +502,7 @@ namespace PokerDemoConsole {
                 Int32 numRequestsInSingleSend = NumRequestsInSingleSend / 100;
                 RequestData[] reqData = new RequestData[numRequestsInSingleSend];
                 for (Int32 i = 0; i < numRequestsInSingleSend; i++) {
-                    reqData[i] = new RequestData(1024);
+                    reqData[i] = new RequestData();
                 }
 
                 // Procedure to check the response correctness.
@@ -669,7 +647,7 @@ namespace PokerDemoConsole {
                 Int32 numRequestsInSingleSend = NumRequestsInSingleSend / 10;
                 RequestData[] reqData = new RequestData[numRequestsInSingleSend];
                 for (Int32 i = 0; i < numRequestsInSingleSend; i++) {
-                    reqData[i] = new RequestData(1024);
+                    reqData[i] = new RequestData();
                 }
 
                 Stopwatch timer = Stopwatch.StartNew();
@@ -705,7 +683,7 @@ SEND_DATA:
 
                                 // Filling up whole buffer with echo requests.
                                 for (Int32 i = 0; i < reqData.Length; i++) {
-                                    reqData[i].WriteData(echoRequest_.RequestBytes, echoRequest_.RequestLength);
+                                    reqData[i].RequestObj = echoRequest_;
                                 }
 
                                 numRequestsToSend = reqData.Length;
@@ -721,7 +699,7 @@ SEND_DATA:
 
                                 // Filling up whole buffer with echo requests.
                                 for (Int32 i = 0; i < reqData.Length; i++) {
-                                    reqData[i].WriteData(gwRequest_.RequestBytes, gwRequest_.RequestLength);
+                                    reqData[i].RequestObj = gwRequest_;
                                 }
 
                                 numRequestsToSend = reqData.Length;
@@ -1200,8 +1178,8 @@ SEND_DATA:
                         throw new ArgumentException("Wrong request type!");
                     }
                 }
-
-                requestsToFill[i].RequestObj.RequestLength = r.ConstructFromFields(false, requestsToFill[i].RequestObj.RequestBytes);
+                r.ConstructFromFields();
+                requestsToFill[i].RequestObj = r;
                 requestsToFill[i].RequestType = rt;
 
                 offset++;
@@ -1401,7 +1379,7 @@ SEND_DATA:
                     }
                 }
 
-                reqData[n].WriteData(r.RequestBytes, r.RequestLength);
+                reqData[n].RequestObj = r;
 
                 n++;
             }
