@@ -168,7 +168,7 @@ namespace ScRetailDemo {
                        {
                            StatusDescription = statusDescription,
                            StatusCode = statusCode
-                       }, null), false, s);
+                       }), false, s);
                     });
 
                     return HandlerStatus.Handled;
