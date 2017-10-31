@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Collections.Generic;
+using System.Linq;
 using Starcounter;
 using Starcounter.Internal;
 
@@ -45,7 +46,7 @@ namespace ScRetailDemo {
             Handle.GET("/ScRetailDemo/stats", () => {
 
                 var json = new RetailClientStatsJson();
-                json.AllClientStats = Db.SQL("SELECT s FROM RetailClientStatsDb s");
+                json.AllClientStats.Data = Db.SQL("SELECT s FROM RetailClientStatsDb s");
 
                 return new Response() { BodyBytes = json.ToJsonUtf8() };
             });
@@ -61,16 +62,16 @@ namespace ScRetailDemo {
                 });
 
                 // Creating all needed indexes.
-                if (Db.SQL("SELECT i FROM Starcounter.Metadata.\"Index\" i WHERE i.Name = ?", "AccountCustomerIndex").First == null)
+                if (Db.SQL("SELECT i FROM Starcounter.Metadata.\"Index\" i WHERE i.Name = ?", "AccountCustomerIndex").FirstOrDefault() == null)
                     Db.SQL("CREATE INDEX AccountCustomerIndex ON Account (RetailCustomer asc)");
 
-                if (Db.SQL("SELECT i FROM Starcounter.Metadata.\"Index\" i WHERE i.Name = ?", "AccountIdIndex").First == null)
+                if (Db.SQL("SELECT i FROM Starcounter.Metadata.\"Index\" i WHERE i.Name = ?", "AccountIdIndex").FirstOrDefault() == null)
                     Db.SQL("CREATE UNIQUE INDEX AccountIdIndex ON Account (AccountId asc)");
 
-                if (Db.SQL("SELECT i FROM Starcounter.Metadata.\"Index\" i WHERE i.Name = ?", "CustomerIdIndex").First == null)
+                if (Db.SQL("SELECT i FROM Starcounter.Metadata.\"Index\" i WHERE i.Name = ?", "CustomerIdIndex").FirstOrDefault() == null)
                     Db.SQL("CREATE UNIQUE INDEX CustomerIdIndex ON RetailCustomer (CustomerId asc)");
 
-                if (Db.SQL("SELECT i FROM Starcounter.Metadata.\"Index\" i WHERE i.Name = ?", "FullNameIndex").First == null)
+                if (Db.SQL("SELECT i FROM Starcounter.Metadata.\"Index\" i WHERE i.Name = ?", "FullNameIndex").FirstOrDefault() == null)
                     Db.SQL("CREATE INDEX FullNameIndex ON RetailCustomer (FullName asc)");
 
                 return 200;
@@ -79,7 +80,7 @@ namespace ScRetailDemo {
             Handle.GET("/ScRetailDemo/serverAggregates", () => {
                 ThreadHelper.SetYieldBlock();
                 try {
-                    return "AccountBalanceTotal=" + Db.SlowSQL<Int64>("SELECT SUM (a.Balance) FROM Account a").First;
+                    return "AccountBalanceTotal=" + Db.SlowSQL<Int64>("SELECT SUM (a.Balance) FROM Account a").FirstOrDefault();
                 }
                 finally {
                     ThreadHelper.ReleaseYieldBlock();
@@ -88,19 +89,19 @@ namespace ScRetailDemo {
 
             Handle.GET("/ScRetailDemo/customers/{?}", (int customerId) => {
                 var json = new CustomerJson();
-                json.Data = Db.SQL("SELECT p FROM RetailCustomer p WHERE CustomerId = ?", customerId).First;
+                json.Data = Db.SQL("SELECT p FROM RetailCustomer p WHERE CustomerId = ?", customerId).FirstOrDefault();
                 return json.ToJsonUtf8();
             });
 
             Handle.GET("/ScRetailDemo/dashboard/{?}", (int customerId) => {
                 var json = new CustomerAndAccountsJson();
-                json.Data = Db.SQL("SELECT p FROM RetailCustomer p WHERE CustomerId = ?", customerId).First;
+                json.Data = Db.SQL("SELECT p FROM RetailCustomer p WHERE CustomerId = ?", customerId).FirstOrDefault();
                 return json.ToJsonUtf8();
             });
 
             Handle.GET("/ScRetailDemo/customers?f={?}", (string fullName) => {
                 var json = new CustomerJson();
-                json.Data = Db.SQL("SELECT p FROM RetailCustomer p WHERE FullName = ?", fullName).First;
+                json.Data = Db.SQL("SELECT p FROM RetailCustomer p WHERE FullName = ?", fullName).FirstOrDefault();
                 return json.ToJsonUtf8();
             });
 
@@ -134,8 +135,8 @@ namespace ScRetailDemo {
                     Db.TransactAsync(() =>
                     {
 
-                        Account source = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", fromId).First;
-                        Account target = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", toId).First;
+                        Account source = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", fromId).FirstOrDefault();
+                        Account target = Db.SQL<Account>("SELECT a FROM Account a WHERE AccountId = ?", toId).FirstOrDefault();
 
                         if (source == null)
                         {
