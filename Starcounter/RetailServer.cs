@@ -163,13 +163,13 @@ namespace ScRetailDemo {
                         }
                     }).ContinueWith((_) =>
                     {
-                        Starcounter.Scheduling.ScheduleTask(
+                        Starcounter.Scheduling.RunTask(
                        () =>
                        r.SendResponse(new Response
                        {
                            StatusDescription = statusDescription,
                            StatusCode = statusCode
-                       }), false, s);
+                       }), s);
                     });
 
                     return HandlerStatus.Handled;
