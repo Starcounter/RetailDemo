@@ -23,7 +23,6 @@ namespace PokerDemoConsole {
         public const Int32 MaxInitialBalance = 100000;
         public const Int32 MaxTransferAmount = 1000;
         public const Int32 SendStatsNumSeconds = 1;
-        public const Int32 DefaultTimeoutMs = 20000;
         
         readonly public Int32 NumCustomers = 10000;
 
@@ -50,6 +49,8 @@ namespace PokerDemoConsole {
         readonly public String[] ServerIps = new String[] { "127.0.0.1" };
         readonly public UInt16[] ServerPorts = new UInt16[] { 8080 };
         readonly public Boolean UseAggregation = false;
+
+        readonly public Boolean HttpAsync = false;
 
         readonly public UInt16 AggregationPort = 9191;
         readonly public TestTypes TestType = TestTypes.PokerDemo;
@@ -152,6 +153,9 @@ namespace PokerDemoConsole {
 
                 } else if (arg.StartsWith("-UseAggregation=")) {
                     UseAggregation = Boolean.Parse(arg.Substring("-UseAggregation=".Length));
+
+                } else if (arg.StartsWith("-HttpAsync=")) {
+                    HttpAsync = Boolean.Parse(arg.Substring("-HttpAsync=".Length));
 
                 } else if (arg.StartsWith("-NumTestRequestsEachWorker=")) {
                     NumTestRequestsEachWorker = Int32.Parse(arg.Substring("-NumTestRequestsEachWorker=".Length));
@@ -305,7 +309,7 @@ namespace PokerDemoConsole {
         GetCustomerByFullName
     }
 
-    class WorkerSettings {
+    class WorkerStats {
 
         public IRequestsCreator Irc;
         public Int32 NumBodyCharacters;
@@ -320,7 +324,7 @@ namespace PokerDemoConsole {
         Int32 numTotalReads_;
         Int32 numTotalWrites_;
 
-        public WorkerSettings() {
+        public WorkerStats() {
 
         }
 
@@ -433,7 +437,7 @@ namespace PokerDemoConsole {
         /// <summary>
         /// Worker settings.
         /// </summary>
-        WorkerSettings ws_;
+        WorkerStats ws_;
 
         /// <summary>
         /// Reference to a global settings.
@@ -455,7 +459,7 @@ namespace PokerDemoConsole {
         /// </summary>
         /// <param name="workerId"></param>
         /// <param name="ws"></param>
-        public Worker(Int32 workerId, WorkerSettings ws, Settings globalSettings) {
+        public Worker(Int32 workerId, WorkerStats ws, Settings globalSettings) {
 
             workerId_ = workerId;
             ws_ = ws;
@@ -487,6 +491,21 @@ namespace PokerDemoConsole {
         }
 
         /// <summary>
+        /// Simply checking the response for statistics.
+        /// </summary>
+        /// <param name="ws"></param>
+        void SimpleResponseCheck(Response resp) {
+            if (resp.IsSuccessStatusCode) {
+                ws_.AddToOkResponses(1);
+            } else {
+                //Console.WriteLine("Error: " + resp.Body);
+                ws_.AddToFailResponses(1);
+            }
+
+            ws_.Irc.IncrementTotalNumResponses(1);
+        }
+
+        /// <summary>
         /// No aggregation worker routine.
         /// </summary>
         /// <param name="rc"></param>
@@ -505,19 +524,6 @@ namespace PokerDemoConsole {
                     reqData[i] = new RequestData();
                 }
 
-                // Procedure to check the response correctness.
-                Action<Response> checkResponse = (Response resp) => {
-
-                    if (resp.IsSuccessStatusCode) {
-                        ws_.AddToOkResponses(1);
-                    } else {
-                        //Console.WriteLine("Error: " + resp.Body);
-                        ws_.AddToFailResponses(1);
-                    }
-
-                    ws_.Irc.IncrementTotalNumResponses(1);
-                };
-
                 Stopwatch timer = Stopwatch.StartNew();
 
                 while(true) {
@@ -533,7 +539,14 @@ namespace PokerDemoConsole {
                             ws_.IncrementStats(reqData[i].RequestType);
 
                             Request req = reqData[i].RequestObj;
-                            Http.CustomRESTRequest(req.Method, req.Uri, req.BodyBytes, req.HeadersDictionary, checkResponse, Settings.DefaultTimeoutMs);
+
+                            // Checking if we have async Http calls.
+                            if (globalSettings_.HttpAsync) {
+                                Http.CustomRESTRequest(req.Method, req.Uri, req.BodyBytes, req.HeadersDictionary, SimpleResponseCheck);
+                            } else {
+                                Response resp = Http.CustomRESTRequest(req.Method, req.Uri, req.BodyBytes, req.HeadersDictionary);
+                                SimpleResponseCheck(resp);
+                            }
 
                             totalNumSentRequests++;
                         }
@@ -572,6 +585,11 @@ namespace PokerDemoConsole {
                 ws_.ExitCode = 1;
 
             } finally {
+
+                // Checking if there are failed responses.
+                if (0 != ws_.NumTotalFailResponses) {
+                    ws_.ExitCode = 1;
+                }
 
                 ws_.WaitForAllWorkersEvent.Signal();
             }
@@ -1438,7 +1456,7 @@ SEND_DATA:
         /// </summary>
         static void ReportPerformanceStats(
             Settings settings,
-            WorkerSettings[] workerSettings) {
+            WorkerStats[] workerSettings) {
 
             // Checking if we send the statistics.
             if (!settings.SendStatistics)
@@ -1485,7 +1503,7 @@ SEND_DATA:
                 numReads,
                 numWrites);
 
-            Response resp = Http.GET(statsUri, null, Settings.DefaultTimeoutMs);
+            Response resp = Http.GET(statsUri);
 
             if (!resp.IsSuccessStatusCode) {
                 throw new Exception("Can't update test statistics: " + resp.Body);
@@ -1558,7 +1576,7 @@ SEND_DATA:
                     irc = grc;
                 }
 
-                WorkerSettings[] workerSettings = new WorkerSettings[settings.NumWorkersTotal];
+                WorkerStats[] workerSettings = new WorkerStats[settings.NumWorkersTotal];
                 Int32 n = 0;
 
                 for (Int32 i = 0; i < settings.NumWorkersPerServerEndpoint; i++) {
@@ -1567,7 +1585,7 @@ SEND_DATA:
 
                         foreach (UInt16 serverPort in settings.ServerPorts) {
 
-                            workerSettings[n] = new WorkerSettings() {
+                            workerSettings[n] = new WorkerStats() {
                                 Irc = irc,
                                 NumBodyCharacters = 8,
                                 WaitForAllWorkersEvent = waitForAllWorkersEvent,

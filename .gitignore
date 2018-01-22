@@ -27,3 +27,4 @@ src/packages
 
 #nCover
 *.sln.DotSettings
+.vs
