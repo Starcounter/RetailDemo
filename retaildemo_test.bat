@@ -52,40 +52,40 @@ ECHO Mixed transactions using aggregation.
 IF ERRORLEVEL 1 GOTO FAILED
 
 
-:: Using asyncronous Node.
+:: Using asyncronous Http.
 
-ECHO Inserting %NumberOfCustomers% objects using asyncronous node and %NumberOfWorkers% workers.
+ECHO Inserting %NumberOfCustomers% objects using asyncronous Http and %NumberOfWorkers% workers.
+%RetailClientExe% -HttpAsync=True -Inserting=True -NumCustomers=%NumberOfCustomers% -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=0 -NumGetCustomerByFullName=0  -NumWorkersPerServerEndpoint=%NumberOfWorkers%
+IF ERRORLEVEL 1 GOTO FAILED
+
+ECHO Getting customers by ID using asyncronous Http.
+%RetailClientExe% -HttpAsync=True -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=%NumberOfOperations% -NumGetCustomerByFullName=0
+IF ERRORLEVEL 1 GOTO FAILED
+
+ECHO Transfering money between accounts using asyncronous Http.
+%RetailClientExe% -HttpAsync=True -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=%NumberOfOperations% -NumGetCustomerAndAccounts=0 -NumGetCustomerById=0 -NumGetCustomerByFullName=0
+IF ERRORLEVEL 1 GOTO FAILED
+
+ECHO Mixed transactions using asyncronous Http.
+%RetailClientExe% -HttpAsync=True -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=%NumberOfOperations% -NumGetCustomerAndAccounts=%NumberOfOperations% -NumGetCustomerById=%NumberOfOperations% -NumGetCustomerByFullName=%NumberOfOperations%
+IF ERRORLEVEL 1 GOTO FAILED
+
+
+:: Using syncronous Http.
+
+ECHO Inserting %NumberOfCustomers% objects using syncronous Http and %NumberOfWorkers% workers.
 %RetailClientExe% -Inserting=True -NumCustomers=%NumberOfCustomers% -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=0 -NumGetCustomerByFullName=0  -NumWorkersPerServerEndpoint=%NumberOfWorkers%
 IF ERRORLEVEL 1 GOTO FAILED
 
-ECHO Getting customers by ID using asyncronous Node.
+ECHO Getting customers by ID using syncronous Http.
 %RetailClientExe% -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=%NumberOfOperations% -NumGetCustomerByFullName=0
 IF ERRORLEVEL 1 GOTO FAILED
 
-ECHO Transfering money between accounts using asyncronous Node.
+ECHO Transfering money between accounts using syncronous Http.
 %RetailClientExe% -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=%NumberOfOperations% -NumGetCustomerAndAccounts=0 -NumGetCustomerById=0 -NumGetCustomerByFullName=0
 IF ERRORLEVEL 1 GOTO FAILED
 
-ECHO Mixed transactions using asyncronous Node.
-%RetailClientExe% -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=%NumberOfOperations% -NumGetCustomerAndAccounts=%NumberOfOperations% -NumGetCustomerById=%NumberOfOperations% -NumGetCustomerByFullName=%NumberOfOperations%
-IF ERRORLEVEL 1 GOTO FAILED
-
-
-:: Using syncronous Node.
-
-ECHO Inserting %NumberOfCustomers% objects using syncronous Node and %NumberOfWorkers% workers.
-%RetailClientExe% -Inserting=True -NumCustomers=%NumberOfCustomers% -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=0 -NumGetCustomerByFullName=0  -NumWorkersPerServerEndpoint=%NumberOfWorkers%
-IF ERRORLEVEL 1 GOTO FAILED
-
-ECHO Getting customers by ID using syncronous Node.
-%RetailClientExe% -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=0 -NumGetCustomerAndAccounts=0 -NumGetCustomerById=%NumberOfOperations% -NumGetCustomerByFullName=0
-IF ERRORLEVEL 1 GOTO FAILED
-
-ECHO Transfering money between accounts using syncronous Node.
-%RetailClientExe% -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=%NumberOfOperations% -NumGetCustomerAndAccounts=0 -NumGetCustomerById=0 -NumGetCustomerByFullName=0
-IF ERRORLEVEL 1 GOTO FAILED
-
-ECHO Mixed transactions using syncronous Node.
+ECHO Mixed transactions using syncronous Http.
 %RetailClientExe% -NumCustomers=%NumberOfCustomers% -NumWorkersPerServerEndpoint=%NumberOfWorkers% -NumTransferMoneyBetweenTwoAccounts=%NumberOfOperations% -NumGetCustomerAndAccounts=%NumberOfOperations% -NumGetCustomerById=%NumberOfOperations% -NumGetCustomerByFullName=%NumberOfOperations%
 IF ERRORLEVEL 1 GOTO FAILED
 
