@@ -23,7 +23,6 @@ namespace PokerDemoConsole {
         public const Int32 MaxInitialBalance = 100000;
         public const Int32 MaxTransferAmount = 1000;
         public const Int32 SendStatsNumSeconds = 1;
-        public const Int32 DefaultTimeoutMs = 20000;
         
         readonly public Int32 NumCustomers = 10000;
 
@@ -50,6 +49,8 @@ namespace PokerDemoConsole {
         readonly public String[] ServerIps = new String[] { "127.0.0.1" };
         readonly public UInt16[] ServerPorts = new UInt16[] { 8080 };
         readonly public Boolean UseAggregation = false;
+
+        readonly public Boolean HttpAsync = false;
 
         readonly public UInt16 AggregationPort = 9191;
         readonly public TestTypes TestType = TestTypes.PokerDemo;
@@ -153,6 +154,9 @@ namespace PokerDemoConsole {
                 } else if (arg.StartsWith("-UseAggregation=")) {
                     UseAggregation = Boolean.Parse(arg.Substring("-UseAggregation=".Length));
 
+                } else if (arg.StartsWith("-HttpAsync=")) {
+                    HttpAsync = Boolean.Parse(arg.Substring("-HttpAsync=".Length));
+
                 } else if (arg.StartsWith("-NumTestRequestsEachWorker=")) {
                     NumTestRequestsEachWorker = Int32.Parse(arg.Substring("-NumTestRequestsEachWorker=".Length));
 
@@ -252,35 +256,13 @@ namespace PokerDemoConsole {
         /// Request object.
         /// </summary>
         Request req_;
-
-        /// <summary>
-        /// Creating request data with maximum bytes.
-        /// </summary>
-        /// <param name="maxBytesNum"></param>
-        public RequestData(Int32 maxBytesNum) {
-            req_ = new Request();
-            req_.RequestBytes = new Byte[maxBytesNum];
-        }
-
-        /// <summary>
-        /// Writing request data to array.
-        /// </summary>
-        /// <param name="bytes"></param>
-        /// <param name="numBytesToWrite"></param>
-        public void WriteData(Byte[] bytes, Int32 numBytesToWrite) {
-
-            if (numBytesToWrite > req_.RequestBytes.Length)
-                throw new ArgumentException("Trying to write request buffer that is bigger than available.");
-
-            Buffer.BlockCopy(bytes, 0, req_.RequestBytes, 0, numBytesToWrite);
-            req_.RequestLength = numBytesToWrite;
-        }
-
+        
         /// <summary>
         /// Request object.
         /// </summary>
         public Request RequestObj {
             get { return req_; }
+            set { req_ = value; }
         }
 
         /// <summary>
@@ -327,7 +309,7 @@ namespace PokerDemoConsole {
         GetCustomerByFullName
     }
 
-    class WorkerSettings {
+    class WorkerStats {
 
         public IRequestsCreator Irc;
         public Int32 NumBodyCharacters;
@@ -342,7 +324,7 @@ namespace PokerDemoConsole {
         Int32 numTotalReads_;
         Int32 numTotalWrites_;
 
-        public WorkerSettings() {
+        public WorkerStats() {
 
         }
 
@@ -455,7 +437,7 @@ namespace PokerDemoConsole {
         /// <summary>
         /// Worker settings.
         /// </summary>
-        WorkerSettings ws_;
+        WorkerStats ws_;
 
         /// <summary>
         /// Reference to a global settings.
@@ -477,7 +459,7 @@ namespace PokerDemoConsole {
         /// </summary>
         /// <param name="workerId"></param>
         /// <param name="ws"></param>
-        public Worker(Int32 workerId, WorkerSettings ws, Settings globalSettings) {
+        public Worker(Int32 workerId, WorkerStats ws, Settings globalSettings) {
 
             workerId_ = workerId;
             ws_ = ws;
@@ -494,7 +476,7 @@ namespace PokerDemoConsole {
             // Creating echo request for each worker.
             gwRequest_ = new Request();
             gwRequest_.Method = "GET";
-            gwRequest_.Uri = "/gwtest";
+            gwRequest_.Uri = "http://" + globalSettings.ServerIps[0] + ":" + globalSettings.ServerPorts[0] + "/gwtest";
             gwRequest_.ConstructFromFields();
 
             String body = "";
@@ -503,9 +485,24 @@ namespace PokerDemoConsole {
 
             echoRequest_ = new Request();
             echoRequest_.Method = "POST";
-            echoRequest_.Uri = "/echotest";
+            echoRequest_.Uri = "http://" + globalSettings.ServerIps[0] + ":" + globalSettings.ServerPorts[0] + "/echotest";
             echoRequest_.Body = body;
             echoRequest_.ConstructFromFields();
+        }
+
+        /// <summary>
+        /// Simply checking the response for statistics.
+        /// </summary>
+        /// <param name="ws"></param>
+        void SimpleResponseCheck(Response resp) {
+            if (resp.IsSuccessStatusCode) {
+                ws_.AddToOkResponses(1);
+            } else {
+                //Console.WriteLine("Error: " + resp.Body);
+                ws_.AddToFailResponses(1);
+            }
+
+            ws_.Irc.IncrementTotalNumResponses(1);
         }
 
         /// <summary>
@@ -518,31 +515,14 @@ namespace PokerDemoConsole {
 
                 Console.WriteLine(String.Format("[{0}]: Starting worker for endpoint {1} : {2}...", workerId_, ws_.ServerIp, ws_.ServerPort));
 
-                Node node = new Node(ws_.ServerIp, ws_.ServerPort);
-                node.ConnectSynchronuously = true;
-                node.MaxNumAsyncConnections = 32;
-
                 Int32 totalNumSentRequests = 0;
                 
                 // Preallocating requests array.
                 Int32 numRequestsInSingleSend = NumRequestsInSingleSend / 100;
                 RequestData[] reqData = new RequestData[numRequestsInSingleSend];
                 for (Int32 i = 0; i < numRequestsInSingleSend; i++) {
-                    reqData[i] = new RequestData(1024);
+                    reqData[i] = new RequestData();
                 }
-
-                // Procedure to check the response correctness.
-                Action<Response> checkResponse = (Response resp) => {
-
-                    if (resp.IsSuccessStatusCode) {
-                        ws_.AddToOkResponses(1);
-                    } else {
-                        //Console.WriteLine("Error: " + resp.Body);
-                        ws_.AddToFailResponses(1);
-                    }
-
-                    ws_.Irc.IncrementTotalNumResponses(1);
-                };
 
                 Stopwatch timer = Stopwatch.StartNew();
 
@@ -558,26 +538,15 @@ namespace PokerDemoConsole {
                             // Checking request type.
                             ws_.IncrementStats(reqData[i].RequestType);
 
-                            // Console.WriteLine("Request: " + UTF8Encoding.UTF8.GetString(reqData[i].DataBytes, 0, reqData[i].DataLength));
+                            Request req = reqData[i].RequestObj;
 
-                            // NOTE: Copying bytes since call is asynchronous and buffers can be reused immediately.
-                            Byte[] copyBytes = new Byte[reqData[i].RequestObj.RequestLength];
-                            Buffer.BlockCopy(reqData[i].RequestObj.RequestBytes, 0, copyBytes, 0, reqData[i].RequestObj.RequestLength);
-
-                            Request req = new Request();
-                            req.RequestBytes = copyBytes;
-                            req.RequestLength = copyBytes.Length;
-
-                            // Performing call on this worker's node.
-                            node.DoRESTRequestAndGetResponse(
-                                null,
-                                null,
-                                null,
-                                null,
-                                checkResponse,
-                                Settings.DefaultTimeoutMs,
-                                null,
-                                req);
+                            // Checking if we have async Http calls.
+                            if (globalSettings_.HttpAsync) {
+                                Http.CustomRESTRequest(req.Method, req.Uri, req.BodyBytes, req.HeadersDictionary, SimpleResponseCheck);
+                            } else {
+                                Response resp = Http.CustomRESTRequest(req.Method, req.Uri, req.BodyBytes, req.HeadersDictionary);
+                                SimpleResponseCheck(resp);
+                            }
 
                             totalNumSentRequests++;
                         }
@@ -616,6 +585,11 @@ namespace PokerDemoConsole {
                 ws_.ExitCode = 1;
 
             } finally {
+
+                // Checking if there are failed responses.
+                if (0 != ws_.NumTotalFailResponses) {
+                    ws_.ExitCode = 1;
+                }
 
                 ws_.WaitForAllWorkersEvent.Signal();
             }
@@ -691,7 +665,7 @@ namespace PokerDemoConsole {
                 Int32 numRequestsInSingleSend = NumRequestsInSingleSend / 10;
                 RequestData[] reqData = new RequestData[numRequestsInSingleSend];
                 for (Int32 i = 0; i < numRequestsInSingleSend; i++) {
-                    reqData[i] = new RequestData(1024);
+                    reqData[i] = new RequestData();
                 }
 
                 Stopwatch timer = Stopwatch.StartNew();
@@ -727,7 +701,7 @@ SEND_DATA:
 
                                 // Filling up whole buffer with echo requests.
                                 for (Int32 i = 0; i < reqData.Length; i++) {
-                                    reqData[i].WriteData(echoRequest_.RequestBytes, echoRequest_.RequestLength);
+                                    reqData[i].RequestObj = echoRequest_;
                                 }
 
                                 numRequestsToSend = reqData.Length;
@@ -743,7 +717,7 @@ SEND_DATA:
 
                                 // Filling up whole buffer with echo requests.
                                 for (Int32 i = 0; i < reqData.Length; i++) {
-                                    reqData[i].WriteData(gwRequest_.RequestBytes, gwRequest_.RequestLength);
+                                    reqData[i].RequestObj = gwRequest_;
                                 }
 
                                 numRequestsToSend = reqData.Length;
@@ -1172,7 +1146,7 @@ SEND_DATA:
                     case RequestTypes.InsertCustomers: {
 
                         r.Method = "POST";
-                        r.Uri = "/ScRetailDemo/customers/" + customers_[offset].CustomerId;
+                        r.Uri = "http://" + settings_.ServerIps[0] + ":" + settings_.ServerPorts[0] + "/ScRetailDemo/customers/" + customers_[offset].CustomerId;
                         r.ContentType = "application/json";
                         r.BodyBytes = customers_[offset].ToJsonUtf8();
 
@@ -1187,7 +1161,7 @@ SEND_DATA:
                         Int32 amountToTransfer = rand.Next(1, Settings.MaxTransferAmount);
 
                         r.Method = "GET";
-                        r.Uri = "/ScRetailDemo/transfer?f=" + c1.Accounts[rand.Next(c1.Accounts.Count)].AccountId +
+                        r.Uri = "http://" + settings_.ServerIps[0] + ":" + settings_.ServerPorts[0] + "/ScRetailDemo/transfer?f=" + c1.Accounts[rand.Next(c1.Accounts.Count)].AccountId +
                             "&t=" + c2.Accounts[rand.Next(c2.Accounts.Count)].AccountId +
                             "&x=" + amountToTransfer;
 
@@ -1197,7 +1171,7 @@ SEND_DATA:
                     case RequestTypes.GetCustomerAndAccounts: {
 
                         r.Method = "GET";
-                        r.Uri = "/ScRetailDemo/dashboard/" + c.CustomerId;
+                        r.Uri = "http://" + settings_.ServerIps[0] + ":" + settings_.ServerPorts[0] + "/ScRetailDemo/dashboard/" + c.CustomerId;
 
                         break;
                     }
@@ -1205,7 +1179,7 @@ SEND_DATA:
                     case RequestTypes.GetCustomerById: {
 
                         r.Method = "GET";
-                        r.Uri = "/ScRetailDemo/customers/" + c.CustomerId;
+                        r.Uri = "http://" + settings_.ServerIps[0] + ":" + settings_.ServerPorts[0] + "/ScRetailDemo/customers/" + c.CustomerId;
 
                         break;
                     }
@@ -1213,7 +1187,7 @@ SEND_DATA:
                     case RequestTypes.GetCustomerByFullName: {
 
                         r.Method = "GET";
-                        r.Uri = "/ScRetailDemo/customers?f=" + c.FullName;
+                        r.Uri = "http://" + settings_.ServerIps[0] + ":" + settings_.ServerPorts[0] + "/ScRetailDemo/customers?f=" + c.FullName;
 
                         break;
                     }
@@ -1222,8 +1196,8 @@ SEND_DATA:
                         throw new ArgumentException("Wrong request type!");
                     }
                 }
-
-                requestsToFill[i].RequestObj.RequestLength = r.ConstructFromFields(false, requestsToFill[i].RequestObj.RequestBytes);
+                r.ConstructFromFields();
+                requestsToFill[i].RequestObj = r;
                 requestsToFill[i].RequestType = rt;
 
                 offset++;
@@ -1423,7 +1397,7 @@ SEND_DATA:
                     }
                 }
 
-                reqData[n].WriteData(r.RequestBytes, r.RequestLength);
+                reqData[n].RequestObj = r;
 
                 n++;
             }
@@ -1482,8 +1456,7 @@ SEND_DATA:
         /// </summary>
         static void ReportPerformanceStats(
             Settings settings,
-            WorkerSettings[] workerSettings,
-            Node nodeClient) {
+            WorkerStats[] workerSettings) {
 
             // Checking if we send the statistics.
             if (!settings.SendStatistics)
@@ -1524,13 +1497,13 @@ SEND_DATA:
             lastTotalNumWrites_ = totalNumWrites;
 
             // Creating stats URL.
-            String statsUri = String.Format("/ScRetailDemo/addstats?numFail={0}&numOk={1}&numReads={2}&numWrites={3}",
+            String statsUri = String.Format("http://" + settings.ServerIps[0] + ":" + settings.ServerPorts[0] + "/ScRetailDemo/addstats?numFail={0}&numOk={1}&numReads={2}&numWrites={3}",
                 numFailResponses,
                 numOkResponses,
                 numReads,
                 numWrites);
 
-            Response resp = nodeClient.GET(statsUri, Settings.DefaultTimeoutMs);
+            Response resp = Http.GET(statsUri);
 
             if (!resp.IsSuccessStatusCode) {
                 throw new Exception("Can't update test statistics: " + resp.Body);
@@ -1558,8 +1531,7 @@ SEND_DATA:
 
                 CountdownEvent waitForAllWorkersEvent = new CountdownEvent(settings.NumWorkersTotal);
 
-                Node nodeClient = new Node(settings.ServerIps[0], settings.ServerPorts[0]);
-                Response nodeResp;
+                Response resp;
 
                 Stopwatch timer = new Stopwatch();
                 timer.Restart();
@@ -1604,7 +1576,7 @@ SEND_DATA:
                     irc = grc;
                 }
 
-                WorkerSettings[] workerSettings = new WorkerSettings[settings.NumWorkersTotal];
+                WorkerStats[] workerSettings = new WorkerStats[settings.NumWorkersTotal];
                 Int32 n = 0;
 
                 for (Int32 i = 0; i < settings.NumWorkersPerServerEndpoint; i++) {
@@ -1613,7 +1585,7 @@ SEND_DATA:
 
                         foreach (UInt16 serverPort in settings.ServerPorts) {
 
-                            workerSettings[n] = new WorkerSettings() {
+                            workerSettings[n] = new WorkerStats() {
                                 Irc = irc,
                                 NumBodyCharacters = 8,
                                 WaitForAllWorkersEvent = waitForAllWorkersEvent,
@@ -1637,11 +1609,11 @@ SEND_DATA:
                 if (settings.Inserting) {
 
                     timer.Restart();
-                    nodeResp = nodeClient.GET("/ScRetailDemo/init");
+                    resp = Http.GET("http://" + settings.ServerIps[0] + ":" + settings.ServerPorts[0] + "/ScRetailDemo/init");
                     timer.Stop();
 
-                    if (!nodeResp.IsSuccessStatusCode) {
-                        throw new Exception("Can't re-initialize the database: " + nodeResp.Body);
+                    if (!resp.IsSuccessStatusCode) {
+                        throw new Exception("Can't re-initialize the database: " + resp.Body);
                     }
 
                     Console.WriteLine(Settings.Separator);
@@ -1654,7 +1626,7 @@ SEND_DATA:
                 timer.Restart();
 
                 // Doing REST call to send statistics to server.
-                ReportPerformanceStats(settings, workerSettings, nodeClient);
+                ReportPerformanceStats(settings, workerSettings);
 
                 // Starting all workers.
                 for (Int32 i = 0; i < settings.NumWorkersTotal; i++) {
@@ -1718,7 +1690,7 @@ SEND_DATA:
                         numSecondsLastStat = Settings.SendStatsNumSeconds;
 
                         // Doing REST call to send statistics to server.
-                        ReportPerformanceStats(settings, workerSettings, nodeClient);
+                        ReportPerformanceStats(settings, workerSettings);
                     }
 
                     maxWorkerTimeSeconds--;
@@ -1743,7 +1715,7 @@ SEND_DATA:
                 }
 
                 // Doing REST call to send statistics to server.
-                ReportPerformanceStats(settings, workerSettings, nodeClient);
+                ReportPerformanceStats(settings, workerSettings);
 
                 Console.WriteLine(String.Format("SUMMARY: Total workers RPS is {0}, total time {1} ms.", totalRPS, timer.ElapsedMilliseconds));
 
