@@ -542,9 +542,15 @@ namespace PokerDemoConsole {
 
                             // Checking if we have async Http calls.
                             if (globalSettings_.HttpAsync) {
+#pragma warning disable 0618
                                 Http.CustomRESTRequest(req.Method, req.Uri, req.BodyBytes, req.HeadersDictionary, SimpleResponseCheck);
+#pragma warning restore 0618
+
                             } else {
+#pragma warning disable 0618
                                 Response resp = Http.CustomRESTRequest(req.Method, req.Uri, req.BodyBytes, req.HeadersDictionary);
+#pragma warning restore 0618
+
                                 SimpleResponseCheck(resp);
                             }
 
@@ -1503,7 +1509,9 @@ SEND_DATA:
                 numReads,
                 numWrites);
 
+#pragma warning disable 0618
             Response resp = Http.GET(statsUri);
+#pragma warning restore 0618
 
             if (!resp.IsSuccessStatusCode) {
                 throw new Exception("Can't update test statistics: " + resp.Body);
@@ -1609,7 +1617,11 @@ SEND_DATA:
                 if (settings.Inserting) {
 
                     timer.Restart();
+
+#pragma warning disable 0618
                     resp = Http.GET("http://" + settings.ServerIps[0] + ":" + settings.ServerPorts[0] + "/ScRetailDemo/init");
+#pragma warning restore 0618
+
                     timer.Stop();
 
                     if (!resp.IsSuccessStatusCode) {
