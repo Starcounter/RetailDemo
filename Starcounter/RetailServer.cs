@@ -37,7 +37,9 @@ namespace ScRetailDemo {
                 string result = "(null)";
                 // client is running on a third machine using 'wrk -t 10 -c 1000 http://192.168.60.186:8080/proxy'
                 // DNX minimal example using Kestrel frontend gets about 13000 req/sec
+#pragma warning disable 0618
                 result = Http.GET<string>("http://192.168.60.169:80/"); // about 4000 req/sec
+#pragma warning restore 0618
                 // result = new System.Net.WebClient().DownloadString("http://192.168.60.169:80/"); // about 11000 req/sec
                 return result;
             });
