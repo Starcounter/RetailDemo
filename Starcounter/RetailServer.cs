@@ -188,25 +188,25 @@ namespace ScRetailDemo {
 
     [Database]
     public class RetailClientStatsDb { // Statistics entry from the client.
-        public String Received; // Datetime when statistics received.
-        public String ClientIp; // Client IP address.
-        public String NumFail; // Number of failed responses since last report.
-        public String NumOk; // Number of successful responses since last report.
-        public String NumReads; // Number of reads since last report.
-        public String NumWrites; // Number of writes since last report.
+        public String Received { get; set; } // Datetime when statistics received.
+        public String ClientIp { get; set; } // Client IP address.
+        public String NumFail { get; set; } // Number of failed responses since last report.
+        public String NumOk { get; set; } // Number of successful responses since last report.
+        public String NumReads { get; set; } // Number of reads since last report.
+        public String NumWrites { get; set; } // Number of writes since last report.
     }
 
     [Database]
     public class RetailCustomer { // Represents a customer with an account.
-        public int CustomerId; // Public identifier.
-        public string FullName; // RetailCustomer's name.
+        public int CustomerId { get; set; } // Public identifier.
+        public string FullName { get; set; } // RetailCustomer's name.
         public IEnumerable<Account> Accounts { get { return Db.SQL<Account>("SELECT a FROM Account a WHERE a.RetailCustomer=?", this); } }
     }
 
     [Database]
     public class Account { // Represents an account for a specific customer.
-        public int AccountId; // Public identifier.
-        public int Balance; // Money balance in account.
-        public RetailCustomer RetailCustomer; // To which customer this account belongs.
+        public int AccountId { get; set; } // Public identifier.
+        public int Balance { get; set; } // Money balance in account.
+        public RetailCustomer RetailCustomer { get; set; } // To which customer this account belongs.
     }
 }
